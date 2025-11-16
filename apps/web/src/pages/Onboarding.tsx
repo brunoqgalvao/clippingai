@@ -197,7 +197,120 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* Step 2: Report Suggestions */}
+        {/* Step 2: Company Verification */}
+        {step === 'verify' && companyInfo && (
+          <div className="onboarding-step verify-step">
+            <div className="step-content">
+              {error && (
+                <div className="error-banner">
+                  <AlertCircle size={20} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <h2 className="section-title">Is this your company?</h2>
+              <p className="section-subtitle">Please verify the information we found</p>
+
+              <div className="company-verification-card">
+                {/* Company Logo Section */}
+                <div className="logo-section">
+                  {selectedLogo ? (
+                    <img src={selectedLogo} alt={companyInfo.name} className="company-logo" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  ) : (
+                    <div className="logo-placeholder">
+                      <Building2 size={48} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Company Info */}
+                <div className="company-info-section">
+                  <h3 className="company-name-large">{companyInfo.name}</h3>
+                  <p className="company-domain">{companyInfo.website}</p>
+                  {companyInfo.description && (
+                    <p className="company-description">{companyInfo.description}</p>
+                  )}
+                  {companyInfo.industry && (
+                    <div className="company-meta">
+                      <span className="meta-label">Industry:</span>
+                      <span className="meta-value">{companyInfo.industry}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Logo Options */}
+                {companyInfo.logoOptions && companyInfo.logoOptions.length > 0 && (
+                  <div className="logo-options">
+                    <p className="options-label">Or choose a different logo:</p>
+                    <div className="logo-grid">
+                      {companyInfo.logoOptions.map((option, index) => (
+                        <div
+                          key={index}
+                          className={`logo-option ${selectedLogo === option.url ? 'selected' : ''}`}
+                          onClick={() => setSelectedLogo(option.url)}
+                        >
+                          <img src={option.url} alt={`${companyInfo.name} logo option`} onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="step-actions">
+                <button className="btn-primary-large" onClick={handleVerifyCompany}>
+                  Yes, that's correct
+                  <Check size={20} />
+                </button>
+                <button className="btn-secondary-large" onClick={handleNotMyCompany}>
+                  <Edit3 size={20} />
+                  This isn't my company
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2b: Manual Company Input */}
+        {step === 'manual' && (
+          <div className="onboarding-step manual-step">
+            <div className="step-content">
+              <h2 className="section-title">Tell us about your company</h2>
+              <p className="section-subtitle">
+                Describe your company in your own words - our AI will understand
+              </p>
+
+              <div className="manual-input-section">
+                <textarea
+                  className="manual-textarea"
+                  placeholder="Example: We're a B2B SaaS company that helps marketing teams automate their reporting. We compete with HubSpot and Marketo, and our website is acme.com"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  rows={6}
+                />
+                <p className="input-hint">
+                  Include your company name, what you do, website, and any competitors you know about
+                </p>
+              </div>
+
+              <div className="step-actions">
+                <button
+                  className="btn-primary-large"
+                  onClick={handleManualSubmit}
+                  disabled={!manualInput.trim()}
+                >
+                  Continue
+                  <ArrowRight size={20} />
+                </button>
+                <button className="btn-text" onClick={() => setStep('verify')}>
+                  Go back
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Report Suggestions */}
         {step === 'suggestions' && companyInfo && (
           <div className="onboarding-step suggestions-step">
             <div className="step-content">

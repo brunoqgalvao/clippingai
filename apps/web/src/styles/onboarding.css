@@ -714,3 +714,244 @@
     padding-right: 20px;
   }
 }
+
+/* Verification Step */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
+  color: #EF4444;
+  margin-bottom: 24px;
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+.company-verification-card {
+  max-width: 600px;
+  margin: 0 auto 48px;
+  padding: 40px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  animation: cardSlideIn 0.6s ease-out;
+}
+
+.logo-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.company-logo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  border-radius: 16px;
+  background: white;
+  padding: 12px;
+}
+
+.logo-placeholder {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 217, 255, 0.1);
+  border: 2px dashed var(--color-primary);
+  border-radius: 16px;
+  color: var(--color-primary);
+}
+
+.company-info-section {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.company-name-large {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+.company-domain {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-primary);
+  margin-bottom: 16px;
+}
+
+.company-description {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+}
+
+.company-meta {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+
+.meta-label {
+  color: var(--color-text-muted);
+}
+
+.meta-value {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.logo-options {
+  margin-top: 32px;
+  padding-top: 32px;
+  border-top: 1px solid var(--color-border);
+}
+
+.options-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.logo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.logo-option {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 12px;
+  background: white;
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-option:hover {
+  border-color: var(--color-primary);
+}
+
+.logo-option.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+.logo-option img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.btn-secondary-large {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 40px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  background: transparent;
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn-secondary-large:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Manual Input Step */
+.manual-input-section {
+  max-width: 600px;
+  margin: 0 auto 48px;
+}
+
+.manual-textarea {
+  width: 100%;
+  padding: 20px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-border);
+  border-radius: 12px;
+  outline: none;
+  resize: vertical;
+  transition: all 0.3s;
+  margin-bottom: 12px;
+}
+
+.manual-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-glow);
+}
+
+.manual-textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.btn-text {
+  padding: 12px 24px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.btn-text:hover {
+  color: var(--color-text);
+}
+
+/* Responsive for new steps */
+@media (max-width: 768px) {
+  .company-verification-card {
+    padding: 24px;
+  }
+
+  .logo-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .btn-secondary-large {
+    font-size: 16px;
+    padding: 16px 24px;
+  }
+
+  .step-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .step-actions button {
+    width: 100%;
+  }
+}
