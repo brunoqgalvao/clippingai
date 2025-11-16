@@ -9,18 +9,15 @@ import {
   Check,
   Loader2,
   ArrowRight,
-  Clock
+  Clock,
+  Edit3,
+  AlertCircle
 } from 'lucide-react';
+import type { CompanyDetectionResult } from '@clippingai/shared';
+import { detectCompany, processManualCompany } from '../lib/api';
 import '../styles/onboarding.css';
 
-type OnboardingStep = 'detecting' | 'suggestions' | 'questions' | 'generating' | 'complete';
-
-interface CompanyInfo {
-  name: string;
-  domain: string;
-  industry?: string;
-  competitors?: string[];
-}
+type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'questions' | 'generating' | 'complete';
 
 interface ReportSuggestion {
   type: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
@@ -36,28 +33,37 @@ export default function Onboarding() {
   const email = searchParams.get('email') || '';
 
   const [step, setStep] = useState<OnboardingStep>('detecting');
-  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
+  const [companyInfo, setCompanyInfo] = useState<CompanyDetectionResult | null>(null);
+  const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
+  const [manualInput, setManualInput] = useState('');
   const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
   const [reportId, setReportId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate company detection
+  // Real company detection using API
   useEffect(() => {
-    if (step === 'detecting') {
-      setTimeout(() => {
-        // Extract domain from email
-        const domain = email.split('@')[1] || 'company.com';
-        const companyName = domain.split('.')[0];
-
-        setCompanyInfo({
-          name: companyName.charAt(0).toUpperCase() + companyName.slice(1),
-          domain: domain,
-          industry: 'Technology',
-          competitors: ['Competitor A', 'Competitor B', 'Competitor C']
+    if (step === 'detecting' && email) {
+      detectCompany(email)
+        .then((result) => {
+          setCompanyInfo(result);
+          setSelectedLogo(result.logo || null);
+          setStep('verify');
+        })
+        .catch((err) => {
+          console.error('Detection error:', err);
+          setError('Failed to detect company. Please try again.');
+          // Still show verification step with minimal info
+          const domain = email.split('@')[1] || 'company.com';
+          const name = domain.split('.')[0];
+          setCompanyInfo({
+            name: name.charAt(0).toUpperCase() + name.slice(1),
+            domain,
+            website: `https://${domain}`,
+            confidence: 'low',
+          });
+          setStep('verify');
         });
-
-        setStep('suggestions');
-      }, 2500);
     }
   }, [step, email]);
 
@@ -108,6 +114,28 @@ export default function Onboarding() {
         setReportId('demo-report-123');
         setStep('complete');
       }, 3000);
+    }
+  };
+
+  const handleVerifyCompany = () => {
+    setStep('suggestions');
+  };
+
+  const handleNotMyCompany = () => {
+    setStep('manual');
+  };
+
+  const handleManualSubmit = async () => {
+    if (!manualInput.trim()) return;
+
+    try {
+      const result = await processManualCompany(manualInput);
+      setCompanyInfo(result);
+      setSelectedLogo(result.logo || null);
+      setStep('suggestions');
+    } catch (err) {
+      console.error('Manual input error:', err);
+      setError('Failed to process company information. Please try again.');
     }
   };
 

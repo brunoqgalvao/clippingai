@@ -13,10 +13,18 @@ export interface ApiResponse<T = unknown> {
 
 // Onboarding types
 export interface CompanyDetectionResult {
-  companyName: string;
-  companyDomain: string;
+  name: string;
+  domain: string;
+  website: string;
+  description?: string;
   industry?: string;
+  logo?: string;
+  logoOptions?: Array<{
+    url: string;
+    source: string;
+  }>;
   competitors?: string[];
+  confidence: 'high' | 'medium' | 'low';
 }
 
 export interface SuggestedReport {

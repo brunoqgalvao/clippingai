@@ -22,10 +22,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Import routes
+import onboardingRoutes from './routes/onboarding.js';
+
 // API routes
 app.get('/api', (req, res) => {
   res.json({ message: 'Clipping.AI API' });
 });
+
+// Mount routes
+app.use('/api/onboarding', onboardingRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
