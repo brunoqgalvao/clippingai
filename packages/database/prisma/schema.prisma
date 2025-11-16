@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionTier {
+  free
+  pro
+  enterprise
+}
+
+enum SubscriptionStatus {
+  active
+  cancelled
+  suspended
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  passwordHash       String             @map("password_hash")
+  name               String?
+  companyName        String?            @map("company_name") // Detected from email
+  companyDomain      String?            @map("company_domain") // e.g., "acme.com"
+  timezone           String             @default("America/Los_Angeles")
+  emailVerified      Boolean            @default(false) @map("email_verified")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  subscriptionTier   SubscriptionTier   @default(free) @map("subscription_tier")
+  subscriptionStatus SubscriptionStatus @default(active) @map("subscription_status")
+
+  reportConfigs    ReportConfig[]
+  generatedReports GeneratedReport[]
+  articleFeedback  ArticleFeedback[]
+
+  @@map("users")
+}
+
+enum ReportStatus {
+  active
+  paused
+  deleted
+}
+
+enum Frequency {
+  daily
+  weekly
+  biweekly
+  monthly
+}
+
+enum ReportType {
+  competitor_landscape // Tracks multiple competitors
+  market_landscape     // Tracks market trends and news
+  media_monitoring     // Tracks mentions of user's company
+}
+
+model ReportConfig {
+  id               String       @id @default(uuid())
+  userId           String       @map("user_id")
+  title            String
+  description      String // Natural language input from user
+  reportType       ReportType   @map("report_type")
+  status           ReportStatus @default(active)
+
+  // AI-optimized parameters (JSON)
+  searchParameters Json         @map("search_parameters")
+  // Example: {
+  //   "keywords": ["acme corp", "product launch"],
+  //   "competitors": ["Competitor A", "Competitor B"],
+  //   "sources": ["techcrunch.com", "theverge.com"],
+  //   "dateRange": "7d",
+  //   "searchQueries": ["acme corp product updates"]
+  // }
+
+  // User feedback incorporated into prompt
+  userFeedback     Json?        @map("user_feedback")
+  // Example: {
+  //   "exclude": ["Competitor C"],
+  //   "focus": ["pricing changes", "new features"],
+  //   "tone": "concise"
+  // }
+
+  // Schedule
+  frequency        Frequency
+  scheduleDay      String? // monday, tuesday, etc. (for weekly+)
+  scheduleTime     String  @map("schedule_time") // e.g., "09:00"
+  nextGenerationAt DateTime? @map("next_generation_at")
+  lastGenerationAt DateTime? @map("last_generation_at")
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipients       ReportRecipient[]
+  generatedReports GeneratedReport[]
+
+  @@index([userId])
+  @@index([nextGenerationAt])
+  @@map("report_configs")
+}
+
+enum RecipientStatus {
+  active
+  unsubscribed
+}
+
+model ReportRecipient {
+  id               String          @id @default(uuid())
+  reportConfigId   String          @map("report_config_id")
+  email            String
+  status           RecipientStatus @default(active)
+  unsubscribeToken String?         @unique @map("unsubscribe_token")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  unsubscribedAt   DateTime?       @map("unsubscribed_at")
+
+  reportConfig ReportConfig @relation(fields: [reportConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([reportConfigId, email])
+  @@index([reportConfigId])
+  @@map("report_recipients")
+}
+
+enum GeneratedReportStatus {
+  generating
+  completed
+  failed
+}
+
+model GeneratedReport {
+  id                    String                @id @default(uuid())
+  reportConfigId        String                @map("report_config_id")
+  userId                String                @map("user_id")
+  status                GeneratedReportStatus @default(generating)
+
+  // Content (JSON)
+  content               Json?
+  // Example: {
+  //   "summary": "This week in competitor intelligence...",
+  //   "articles": [
+  //     {
+  //       "id": "article-1",
+  //       "title": "Competitor X Launches AI Widget",
+  //       "summary": "Brief 2-3 sentence summary...",
+  //       "content": "Full article content...",
+  //       "imageUrl": "https://storage.googleapis.com/...",
+  //       "imageAlt": "Abstract AI representation",
+  //       "sources": ["url1", "url2"],
+  //       "publishedAt": "2025-11-10"
+  //     }
+  //   ]
+  // }
+
+  // Sharing
+  isPublic              Boolean               @default(false) @map("is_public")
+  publicSlug            String?               @unique @map("public_slug")
+  viewCount             Int                   @default(0) @map("view_count")
+
+  // Metadata
+  generationStartedAt   DateTime              @default(now()) @map("generation_started_at")
+  generationCompletedAt DateTime?             @map("generation_completed_at")
+  generationDurationMs  Int?                  @map("generation_duration_ms")
+  errorMessage          String?               @map("error_message")
+
+  createdAt             DateTime              @default(now()) @map("created_at")
+
+  reportConfig    ReportConfig      @relation(fields: [reportConfigId], references: [id], onDelete: Cascade)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleFeedback ArticleFeedback[]
+
+  @@index([reportConfigId])
+  @@index([userId])
+  @@index([publicSlug])
+  @@index([createdAt(sort: Desc)])
+  @@map("generated_reports")
+}
+
+enum FeedbackType {
+  like
+  dislike
+}
+
+model ArticleFeedback {
+  id                String       @id @default(uuid())
+  generatedReportId String       @map("generated_report_id")
+  articleId         String       @map("article_id") // ID from the JSON content
+  userId            String       @map("user_id")
+  feedbackType      FeedbackType @map("feedback_type")
+
+  // Optional detailed feedback (only for report owner)
+  detailedFeedback  String?      @map("detailed_feedback")
+  // Example: "Don't include news from Competitor C anymore"
+  // or "Focus more on pricing changes"
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  generatedReport GeneratedReport @relation(fields: [generatedReportId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([generatedReportId, articleId, userId])
+  @@index([generatedReportId])
+  @@index([userId])
+  @@map("article_feedback")
+}
