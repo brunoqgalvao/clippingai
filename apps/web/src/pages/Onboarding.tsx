@@ -17,7 +17,7 @@ import type { CompanyDetectionResult } from '@clippingai/shared';
 import { detectCompany, processManualCompany } from '../lib/api';
 import '../styles/onboarding.css';
 
-type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'questions' | 'generating' | 'complete';
+type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'generating' | 'viewing' | 'questions' | 'signup' | 'complete';
 
 interface ReportSuggestion {
   type: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
@@ -106,15 +106,27 @@ export default function Onboarding() {
 
   const handleContinue = () => {
     if (step === 'suggestions') {
-      setStep('questions');
-    } else if (step === 'questions') {
+      // Go straight to generating the report
       setStep('generating');
       // Simulate report generation
       setTimeout(() => {
         setReportId('demo-report-123');
-        setStep('complete');
+        setStep('viewing');
       }, 3000);
+    } else if (step === 'viewing') {
+      // After seeing the report, ask questions
+      setStep('questions');
+    } else if (step === 'questions') {
+      // After questions, create account
+      setStep('signup');
     }
+  };
+
+  const handleSignup = () => {
+    // Simulate account creation
+    setTimeout(() => {
+      setStep('complete');
+    }, 1500);
   };
 
   const handleVerifyCompany = () => {
@@ -422,7 +434,7 @@ export default function Onboarding() {
                   className="btn-primary-large"
                   onClick={handleContinue}
                 >
-                  Generate My First Report
+                  Continue to Account Setup
                   <ArrowRight size={20} />
                 </button>
               </div>
@@ -471,7 +483,130 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* Step 5: Complete */}
+        {/* Step 5: Viewing Report */}
+        {step === 'viewing' && reportId && (
+          <div className="onboarding-step viewing-step">
+            <div className="step-content">
+              <h2 className="section-title">
+                Here's your first intelligence report!
+              </h2>
+              <p className="section-subtitle">
+                This is what you'll receive automatically based on your preferences
+              </p>
+
+              <div className="report-preview-card large">
+                <div className="preview-header">
+                  <h3>Competitor Intelligence - Week of Nov 11</h3>
+                  <span className="preview-badge">Just generated</span>
+                </div>
+                <p className="preview-summary">
+                  <strong>TL;DR:</strong> 5 major updates detected across your competitors.
+                  Market shifting toward AI-native solutions with 3 new product launches this week.
+                </p>
+
+                <div className="preview-articles">
+                  <div className="preview-article">
+                    <div className="article-img-placeholder"></div>
+                    <h4>Competitor X Launches AI-Powered Platform</h4>
+                    <p>Major product announcement with new AI capabilities targeting enterprise customers...</p>
+                  </div>
+                  <div className="preview-article">
+                    <div className="article-img-placeholder"></div>
+                    <h4>Competitor Y Raises $50M Series B</h4>
+                    <p>Significant funding round to accelerate product development and market expansion...</p>
+                  </div>
+                  <div className="preview-article">
+                    <div className="article-img-placeholder"></div>
+                    <h4>Industry Shifts Toward AI-Native Solutions</h4>
+                    <p>Market analysis shows 73% increase in AI feature adoption across the sector...</p>
+                  </div>
+                </div>
+
+                <div className="preview-stats">
+                  <div className="stat">
+                    <span className="stat-value">5</span>
+                    <span className="stat-label">Articles</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-value">12</span>
+                    <span className="stat-label">Sources</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-value">7</span>
+                    <span className="stat-label">Days</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="step-actions">
+                <button
+                  className="btn-primary-large"
+                  onClick={handleContinue}
+                >
+                  I love it! Set up delivery
+                  <ArrowRight size={20} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6: Signup */}
+        {step === 'signup' && (
+          <div className="onboarding-step signup-step">
+            <div className="step-content">
+              <h2 className="section-title">Create your account</h2>
+              <p className="section-subtitle">
+                Almost done! Create your account to start receiving reports
+              </p>
+
+              <div className="signup-form">
+                <div className="form-section">
+                  <label className="form-label">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    disabled
+                    className="text-input disabled"
+                  />
+                </div>
+
+                <div className="form-section">
+                  <label className="form-label">Password</label>
+                  <input
+                    type="password"
+                    placeholder="Create a password (min 8 characters)"
+                    className="text-input"
+                  />
+                  <p className="input-hint">
+                    We'll use this to secure your account and dashboard
+                  </p>
+                </div>
+
+                <div className="form-section">
+                  <label className="form-label">Name (optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    className="text-input"
+                  />
+                </div>
+              </div>
+
+              <div className="step-actions">
+                <button
+                  className="btn-primary-large"
+                  onClick={handleSignup}
+                >
+                  Create Account & Start Receiving Reports
+                  <Check size={20} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 7: Complete */}
         {step === 'complete' && (
           <div className="onboarding-step complete-step">
             <div className="step-content">
@@ -482,12 +617,12 @@ export default function Onboarding() {
               </div>
 
               <h1 className="step-title">
-                Your report is ready! 🎉
+                You're all set! 🎉
               </h1>
 
               <p className="step-subtitle">
-                We've generated your first intelligence report with the latest insights
-                from the past 7 days. You'll receive future reports via email at {email}.
+                Your account is created and your first report is ready! You'll receive future
+                reports via email at {email} starting {frequency === 'daily' ? 'tomorrow morning' : 'next week'}.
               </p>
 
               <div className="report-preview-card">
