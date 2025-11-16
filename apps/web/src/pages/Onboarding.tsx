@@ -163,10 +163,10 @@ export default function Onboarding() {
 
       {/* Header */}
       <header className="onboarding-header">
-        <div className="logo">
+        <a href="/" className="logo">
           <Sparkles className="logo-icon" />
           <span className="logo-text">Clipping.AI</span>
-        </div>
+        </a>
       </header>
 
       <main className="onboarding-main">

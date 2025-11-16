@@ -2,9 +2,26 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { prisma } from '@clippingai/database';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from monorepo root
+const envPath = path.resolve(__dirname, '../../../.env');
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  console.error('❌ Error loading .env file:', result.error);
+} else {
+  console.log(`✅ Loaded .env from: ${envPath}`);
+  console.log('📋 Environment variables loaded:', {
+    hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+    hasTavilyKey: !!process.env.TAVILY_API_KEY,
+    hasGoogleKey: !!process.env.GOOGLE_AI_API_KEY,
+  });
+}
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -24,6 +41,7 @@ app.get('/health', (req, res) => {
 
 // Import routes
 import onboardingRoutes from './routes/onboarding.js';
+import reportsRoutes from './routes/reports.js';
 
 // API routes
 app.get('/api', (req, res) => {
@@ -32,6 +50,7 @@ app.get('/api', (req, res) => {
 
 // Mount routes
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -16,6 +16,23 @@
   animation: slideDown 0.6s ease-out;
 }
 
+.onboarding-header .logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.onboarding-header .logo:hover {
+  opacity: 0.8;
+}
+
 .onboarding-main {
   position: relative;
   z-index: 10;

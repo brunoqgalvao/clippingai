@@ -53,10 +53,10 @@ export default function Landing() {
 
       {/* Header */}
       <header className="header">
-        <div className="logo">
+        <a href="/" className="logo">
           <Sparkles className="logo-icon" />
           <span className="logo-text">Clipping.AI</span>
-        </div>
+        </a>
         <nav className="nav">
           <a href="#features">Features</a>
           <a href="#how-it-works">How it Works</a>

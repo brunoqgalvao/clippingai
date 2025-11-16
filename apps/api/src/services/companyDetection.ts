@@ -199,7 +199,7 @@ Response format: Just the URL or null, nothing else.`;
 async function analyzePageWithClaude(pageContent: string, url: string) {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
       messages: [
         {
@@ -246,7 +246,7 @@ Return format:
 async function generateCompanyInfo(domain: string): Promise<Partial<CompanyInfo>> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
       messages: [
         {
@@ -322,7 +322,7 @@ export async function searchCompanyLogos(companyName: string, domain: string): P
 export async function processManualCompanyInput(input: string): Promise<CompanyInfo> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
       messages: [
         {
