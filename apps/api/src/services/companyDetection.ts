@@ -1,10 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
 });
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
 export interface CompanyInfo {
   name: string;
@@ -98,7 +101,7 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
       $('meta[name="description"]').attr('content') ||
       '';
 
-    // Try to find logo
+    // Try to find logo with standard meta tags first
     let logo =
       $('meta[property="og:image"]').attr('content') ||
       $('link[rel="apple-touch-icon"]').attr('href') ||
@@ -109,6 +112,14 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
     if (logo && !logo.startsWith('http')) {
       const baseUrl = new URL(url);
       logo = new URL(logo, baseUrl.origin).toString();
+    }
+
+    // If no logo found with meta tags, use Gemini Flash to intelligently extract it
+    if (!logo || logo.includes('favicon')) {
+      const intelligentLogo = await extractLogoWithGemini(html, url);
+      if (intelligentLogo) {
+        logo = intelligentLogo;
+      }
     }
 
     // Use Claude to analyze the page content and extract additional info
@@ -128,12 +139,67 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
 }
 
 /**
+ * Use Gemini Flash to intelligently extract logo URL from HTML
+ */
+async function extractLogoWithGemini(html: string, url: string): Promise<string | null> {
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    // Truncate HTML to avoid token limits (keep header and first part of body)
+    const truncatedHtml = html.slice(0, 15000);
+
+    const prompt = `Analyze this HTML from ${url} and find the BEST logo image URL.
+
+Look for:
+1. Images in the header/navbar with "logo" in class/id/alt
+2. SVG logos in the header
+3. Large prominent images near the company name
+4. Images with dimensions around 100-400px (typical logo size)
+5. Avoid favicons, social media icons, and tiny images
+
+HTML:
+${truncatedHtml}
+
+Return ONLY the best logo image URL (absolute URL starting with http/https), or "null" if no good logo found.
+If you find a relative URL, convert it to absolute using the base URL: ${url}
+
+Response format: Just the URL or null, nothing else.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+
+    // Clean up the response
+    let logoUrl = response.replace(/["'`]/g, '').trim();
+
+    if (logoUrl === 'null' || logoUrl === 'NULL' || !logoUrl) {
+      return null;
+    }
+
+    // Make sure it's an absolute URL
+    if (!logoUrl.startsWith('http')) {
+      const baseUrl = new URL(url);
+      logoUrl = new URL(logoUrl, baseUrl.origin).toString();
+    }
+
+    // Validate it's actually an image URL
+    if (logoUrl.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i) || logoUrl.includes('logo')) {
+      return logoUrl;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error extracting logo with Gemini:', error);
+    return null;
+  }
+}
+
+/**
  * Use Claude to analyze webpage content
  */
 async function analyzePageWithClaude(pageContent: string, url: string) {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       max_tokens: 1024,
       messages: [
         {
@@ -180,7 +246,7 @@ Return format:
 async function generateCompanyInfo(domain: string): Promise<Partial<CompanyInfo>> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       max_tokens: 1024,
       messages: [
         {
@@ -256,7 +322,7 @@ export async function searchCompanyLogos(companyName: string, domain: string): P
 export async function processManualCompanyInput(input: string): Promise<CompanyInfo> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       max_tokens: 1024,
       messages: [
         {
