@@ -14,7 +14,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import type { CompanyDetectionResult } from '@clippingai/shared';
-import { detectCompany, processManualCompany } from '../lib/api';
+import { detectCompany, processManualCompany, generateReport, type GeneratedReport } from '../lib/api';
 import '../styles/onboarding.css';
 
 type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'generating' | 'viewing' | 'questions' | 'signup' | 'complete';
@@ -39,7 +39,9 @@ export default function Onboarding() {
   const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
   const [reportId, setReportId] = useState<string | null>(null);
+  const [reportData, setReportData] = useState<GeneratedReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState(0);
 
   // Real company detection using API
   useEffect(() => {
@@ -104,15 +106,54 @@ export default function Onboarding() {
     ));
   };
 
-  const handleContinue = () => {
-    if (step === 'suggestions') {
+  const handleContinue = async () => {
+    if (step === 'suggestions' && companyInfo) {
       // Go straight to generating the report
       setStep('generating');
-      // Simulate report generation
-      setTimeout(() => {
-        setReportId('demo-report-123');
-        setStep('viewing');
-      }, 3000);
+      setError(null);
+      setGenerationProgress(0);
+
+      try {
+        // Get selected report type (first selected suggestion)
+        const selectedSuggestion = suggestions.find(s => s.selected);
+        if (!selectedSuggestion) {
+          throw new Error('Please select at least one report type');
+        }
+
+        // Simulate progress
+        const progressInterval = setInterval(() => {
+          setGenerationProgress(prev => Math.min(prev + 5, 95));
+        }, 1000);
+
+        // Actually generate the report
+        const report = await generateReport({
+          companyName: companyInfo.name,
+          companyDomain: companyInfo.domain,
+          industry: companyInfo.industry,
+          competitors: companyInfo.competitors,
+          reportType: selectedSuggestion.type,
+          dateRange: 7
+        });
+
+        clearInterval(progressInterval);
+        setGenerationProgress(100);
+        setReportData(report);
+        setReportId('generated-' + Date.now());
+
+        // Navigate to report page with data
+        setTimeout(() => {
+          navigate('/report', {
+            state: {
+              reportData: report,
+              companyInfo
+            }
+          });
+        }, 500);
+      } catch (err) {
+        console.error('Report generation error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to generate report. Please try again.');
+        setStep('suggestions');
+      }
     } else if (step === 'viewing') {
       // After seeing the report, ask questions
       setStep('questions');
