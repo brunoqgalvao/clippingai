@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Landing from './pages/Landing';
 import Onboarding from './pages/Onboarding';
+import Report from './pages/Report';
 
 function App() {
   return (
@@ -8,7 +9,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/report/:id" element={<div style={{ padding: '100px', textAlign: 'center', color: 'white' }}>Report viewer coming next...</div>} />
+        <Route path="/report" element={<Report />} />
       </Routes>
     </Router>
   );
