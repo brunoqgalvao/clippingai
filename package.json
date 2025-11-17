@@ -9,14 +9,19 @@
     "lint": "pnpm -r lint",
     "clean": "pnpm -r clean"
   },
-  "keywords": ["ai", "competitive-intelligence", "reports"],
+  "keywords": [
+    "ai",
+    "competitive-intelligence",
+    "reports"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.3.3",
+    "@playwright/test": "^1.56.1",
     "@types/node": "^20.10.6",
+    "eslint": "^8.56.0",
     "prettier": "^3.1.1",
-    "eslint": "^8.56.0"
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=20.0.0",

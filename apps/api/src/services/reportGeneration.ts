@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { TavilyClient } from 'tavily';
+import OpenAI from 'openai';
 import type { ReportType } from '@clippingai/database';
 
 const anthropic = new Anthropic({
@@ -8,6 +9,10 @@ const anthropic = new Anthropic({
 });
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+});
 
 // Lazy-load Tavily client (only initialized when needed)
 let tavilyClient: TavilyClient | null = null;
@@ -364,6 +369,50 @@ Return ONLY the TL;DR text (no JSON, no extra formatting).`;
 }
 
 // ============================================================================
+// STEP 6: IMAGE GENERATION
+// ============================================================================
+
+async function generateArticleImages(articles: ReportArticle[]): Promise<void> {
+  if (!process.env.OPENAI_API_KEY) {
+    console.log('⚠️  Skipping image generation (no OpenAI API key)');
+    return;
+  }
+
+  console.log('🎨 Generating images for articles...');
+
+  for (const article of articles) {
+    try {
+      if (!article.imageAlt) {
+        console.log(`  ⏭️  Skipping "${article.title}" (no image description)`);
+        continue;
+      }
+
+      // Generate image using gpt-image-1
+      const response = await openai.images.generate({
+        model: 'gpt-image-1',
+        prompt: `Professional business illustration for an intelligence report article: ${article.imageAlt}.
+Style: Clean, modern, corporate. Use blues, grays, and professional color palette.
+Avoid text in image. Focus on abstract concepts and strategic visualization.`,
+        n: 1,
+        size: '1024x1024',
+        quality: 'standard',
+      });
+
+      if (response.data[0]?.url) {
+        article.imageUrl = response.data[0].url;
+        console.log(`  ✅ Generated image for "${article.title}"`);
+      }
+    } catch (error) {
+      console.error(`  ❌ Error generating image for "${article.title}":`, error instanceof Error ? error.message : 'Unknown error');
+      // Continue with other articles even if one fails
+    }
+  }
+
+  const successCount = articles.filter(a => a.imageUrl).length;
+  console.log(`✅ Generated ${successCount}/${articles.length} images`);
+}
+
+// ============================================================================
 // MAIN REPORT GENERATOR
 // ============================================================================
 
@@ -403,9 +452,9 @@ export async function generateReport(
     console.log('\n✨ Step 5: Synthesizing TL;DR...');
     const tldr = await synthesizeReport(summarizedArticles, input);
 
-    // Step 6: Generate images (async, don't block)
-    console.log('\n🎨 Step 6: Images will be generated asynchronously...');
-    // TODO: Implement image generation in background
+    // Step 6: Generate images
+    console.log('\n🎨 Step 6: Generating images...');
+    await generateArticleImages(summarizedArticles);
 
     const generationTime = Date.now() - startTime;
     console.log(`\n✅ Report generated successfully in ${(generationTime / 1000).toFixed(1)}s`);
