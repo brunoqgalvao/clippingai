@@ -1,81 +1,56 @@
 # Clipping.AI
 
-AI-Powered Competitive Intelligence Platform - delivering personalized, automated reports that blow minds in the first 30 seconds.
+**AI-Powered Competitive Intelligence Platform**
 
-## Features
+Generate premium business intelligence reports automatically using Claude, OpenAI, and web search.
 
-- 🚀 **Amazing First 30s**: Smart company detection from work email → instant report suggestions
-- 🤖 **AI-Powered**: Claude Agent SDK for intelligent report generation
-- 📊 **Three Report Types**: Competitor landscape, market landscape, and media monitoring
-- ❤️ **Feedback System**: Like/dislike articles + detailed feedback to improve future reports
-- 🔗 **Viral Sharing**: Public links optimized for WhatsApp and social sharing
-- 📧 **Email Delivery**: Beautiful emails with TL;DR and full reports
+## Status
 
-## Tech Stack
+🚀 **Core MVP Functional** - End-to-end AI report generation working  
+✅ **Demo Ready** - Full user journey from landing to report viewing  
+📊 **8/14 Features Complete**
 
-- **Frontend**: Vite + React + TypeScript + Tailwind CSS
-- **Backend**: Express + TypeScript
-- **Database**: Neon (PostgreSQL) + Prisma ORM
-- **AI**: Anthropic Claude Agent SDK
-- **Monorepo**: pnpm workspaces
-- **Deploy**: Google Cloud Platform
+## Quick Start
 
-## Project Structure
+```bash
+# 1. Install
+pnpm install
 
-```
-clippingai/
-├── apps/
-│   ├── web/              # Vite + React frontend
-│   └── api/              # Express.js backend
-├── packages/
-│   ├── database/         # Prisma schema & migrations
-│   └── shared/           # Shared types & utilities
-├── pnpm-workspace.yaml   # Monorepo configuration
-└── package.json          # Root package.json
+# 2. Setup environment
+cp .env.example .env
+# Add your API keys to .env
+
+# 3. Run
+pnpm --filter @clippingai/api dev     # Terminal 1
+VITE_PORT=5173 pnpm --filter @clippingai/web dev  # Terminal 2
+
+# 4. Visit
+open http://localhost:5173
 ```
 
-## Getting Started
+## Documentation
 
-### Prerequisites
+📖 **[Read HANDOVER.md](./HANDOVER.md)** - Complete project documentation
 
-- Node.js 20+
-- pnpm 8+
-- Neon database account
+The handover document includes everything you need to know:
+- Detailed architecture
+- Setup instructions
+- Testing procedures
+- What's next (prioritized)
+- Known issues
+- All key files explained
 
-### Installation
+## Quick Demo
 
-1. Clone the repository
-2. Copy `.env.example` to `.env` and fill in your credentials
-3. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+```bash
+# Test with these emails
+test@anthropic.com
+test@stripe.com
+test@vercel.com
 
-4. Set up the database:
-   ```bash
-   cd packages/database
-   pnpm prisma migrate dev
-   ```
+# Flow: Landing → Detect → Verify → Generate (~2 min) → View Report
+```
 
-5. Start the development servers:
-   ```bash
-   pnpm dev
-   ```
+---
 
-This will start:
-- Frontend at http://localhost:5173
-- Backend at http://localhost:3001
-
-## Environment Variables
-
-See `.env.example` for required environment variables.
-
-## Development Workflow
-
-- `pnpm dev` - Start all services in development mode
-- `pnpm build` - Build all packages
-- `pnpm lint` - Lint all packages
-
-## License
-
-MIT
+Built with Claude Code 🤖
