@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClippingAI Logo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --black: #0A0A0A;
+            --gray-900: #1A1A1A;
+            --gray-800: #2A2A2A;
+            --gray-700: #3A3A3A;
+            --gray-300: #9A9A9A;
+            --gray-200: #CACACA;
+            --white: #FAFAFA;
+            --accent: #4A4A4A;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: linear-gradient(135deg, var(--black) 0%, var(--gray-900) 100%);
+            color: var(--white);
+            min-height: 100vh;
+            padding: 4rem 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(255,255,255,0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(255,255,255,0.02) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-section {
+            text-align: center;
+            margin-bottom: 6rem;
+            padding: 4rem 0;
+        }
+
+        .logo-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+        }
+
+        .logo-symbol {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .logo-primary:hover .logo-symbol {
+            transform: rotate(180deg);
+        }
+
+        .logo-wordmark {
+            font-family: 'Syne', sans-serif;
+            font-size: 3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--white);
+            line-height: 1;
+        }
+
+        .logo-wordmark .ai {
+            color: var(--gray-300);
+            font-weight: 600;
+        }
+
+        .tagline {
+            font-size: 1.125rem;
+            color: var(--gray-300);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-top: 1rem;
+            animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+            opacity: 0;
+            font-weight: 500;
+        }
+
+        .variations {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 3rem;
+            margin-top: 6rem;
+        }
+
+        .variation-card {
+            background: linear-gradient(135deg, var(--gray-900) 0%, var(--gray-800) 100%);
+            border: 1px solid var(--gray-700);
+            border-radius: 1.5rem;
+            padding: 3rem 2rem;
+            text-align: center;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+        }
+
+        .variation-card:nth-child(1) { animation-delay: 0.3s; }
+        .variation-card:nth-child(2) { animation-delay: 0.4s; }
+        .variation-card:nth-child(3) { animation-delay: 0.5s; }
+
+        .variation-card:hover {
+            transform: translateY(-8px);
+            border-color: var(--gray-300);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        .variation-title {
+            font-size: 0.875rem;
+            color: var(--gray-300);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 2rem;
+            font-weight: 500;
+        }
+
+        .logo-showcase {
+            padding: 2rem;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-symbol-only {
+            width: 100px;
+            height: 100px;
+        }
+
+        .logo-horizontal {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-horizontal .logo-symbol {
+            width: 60px;
+            height: 60px;
+        }
+
+        .logo-horizontal .logo-wordmark {
+            font-size: 2rem;
+        }
+
+        .logo-stacked {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-stacked .logo-symbol {
+            width: 80px;
+            height: 80px;
+        }
+
+        .logo-stacked .logo-wordmark {
+            font-size: 1.75rem;
+        }
+
+        .color-section {
+            margin-top: 6rem;
+            padding: 3rem 0;
+            border-top: 1px solid var(--gray-700);
+        }
+
+        .section-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            text-align: center;
+            color: var(--gray-200);
+        }
+
+        .color-palette {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .color-swatch {
+            text-align: center;
+            animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+        }
+
+        .color-swatch:nth-child(1) { animation-delay: 0.6s; }
+        .color-swatch:nth-child(2) { animation-delay: 0.65s; }
+        .color-swatch:nth-child(3) { animation-delay: 0.7s; }
+        .color-swatch:nth-child(4) { animation-delay: 0.75s; }
+
+        .color-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin-bottom: 0.75rem;
+            border: 2px solid var(--gray-700);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .color-swatch:hover .color-circle {
+            transform: scale(1.1);
+            border-color: var(--white);
+        }
+
+        .color-name {
+            font-size: 0.875rem;
+            color: var(--gray-300);
+            font-weight: 500;
+        }
+
+        .usage-section {
+            margin-top: 6rem;
+            padding: 3rem;
+            background: var(--gray-900);
+            border-radius: 1.5rem;
+            border: 1px solid var(--gray-700);
+        }
+
+        .usage-examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .usage-example {
+            padding: 2rem;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .usage-example.on-dark {
+            background: var(--black);
+        }
+
+        .usage-example.on-light {
+            background: var(--white);
+        }
+
+        .usage-example.on-light .logo-wordmark {
+            color: var(--black);
+        }
+
+        .usage-example.on-light .logo-wordmark .ai {
+            color: var(--gray-700);
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .logo-primary {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .logo-wordmark {
+                font-size: 2rem;
+            }
+
+            .variations {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero-section">
+            <div class="logo-primary">
+                <svg class="logo-symbol" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Main abstract symbol: Three overlapping angular planes representing data convergence -->
+                    <!-- Plane 1: Bottom layer -->
+                    <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#FAFAFA" opacity="0.3"/>
+
+                    <!-- Plane 2: Middle layer (offset) -->
+                    <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#FAFAFA" opacity="0.5"/>
+
+                    <!-- Plane 3: Top layer (main focus) -->
+                    <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#FAFAFA" opacity="0.9"/>
+
+                    <!-- Central accent point - the convergence -->
+                    <circle cx="50" cy="42" r="4" fill="#FAFAFA"/>
+
+                    <!-- Subtle connecting lines suggesting data flow -->
+                    <line x1="50" y1="25" x2="50" y2="15" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                    <line x1="50" y1="58" x2="50" y2="68" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                </svg>
+                <div class="logo-wordmark">
+                    Clipping<span class="ai">.AI</span>
+                </div>
+            </div>
+            <div class="tagline">Competitive Intelligence Platform</div>
+        </div>
+
+        <div class="variations">
+            <div class="variation-card">
+                <div class="variation-title">Symbol Only</div>
+                <div class="logo-showcase">
+                    <svg class="logo-symbol-only" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#FAFAFA" opacity="0.3"/>
+                        <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#FAFAFA" opacity="0.5"/>
+                        <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#FAFAFA" opacity="0.9"/>
+                        <circle cx="50" cy="42" r="4" fill="#FAFAFA"/>
+                        <line x1="50" y1="25" x2="50" y2="15" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                        <line x1="50" y1="58" x2="50" y2="68" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="variation-card">
+                <div class="variation-title">Horizontal Lockup</div>
+                <div class="logo-showcase">
+                    <div class="logo-horizontal">
+                        <svg class="logo-symbol" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#FAFAFA" opacity="0.3"/>
+                            <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#FAFAFA" opacity="0.5"/>
+                            <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#FAFAFA" opacity="0.9"/>
+                            <circle cx="50" cy="42" r="4" fill="#FAFAFA"/>
+                            <line x1="50" y1="25" x2="50" y2="15" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                            <line x1="50" y1="58" x2="50" y2="68" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                        </svg>
+                        <div class="logo-wordmark">
+                            Clipping<span class="ai">.AI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="variation-card">
+                <div class="variation-title">Stacked</div>
+                <div class="logo-showcase">
+                    <div class="logo-stacked">
+                        <svg class="logo-symbol" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#FAFAFA" opacity="0.3"/>
+                            <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#FAFAFA" opacity="0.5"/>
+                            <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#FAFAFA" opacity="0.9"/>
+                            <circle cx="50" cy="42" r="4" fill="#FAFAFA"/>
+                            <line x1="50" y1="25" x2="50" y2="15" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                            <line x1="50" y1="58" x2="50" y2="68" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                        </svg>
+                        <div class="logo-wordmark">
+                            Clipping<span class="ai">.AI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="color-section">
+            <h2 class="section-title">Color Palette</h2>
+            <div class="color-palette">
+                <div class="color-swatch">
+                    <div class="color-circle" style="background: #0A0A0A;"></div>
+                    <div class="color-name">Deep Black<br>#0A0A0A</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-circle" style="background: #1A1A1A;"></div>
+                    <div class="color-name">Dark Gray<br>#1A1A1A</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-circle" style="background: #9A9A9A;"></div>
+                    <div class="color-name">Medium Gray<br>#9A9A9A</div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-circle" style="background: #FAFAFA; border-color: #0A0A0A;"></div>
+                    <div class="color-name">Off White<br>#FAFAFA</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="usage-section">
+            <h2 class="section-title">Usage Examples</h2>
+            <div class="usage-examples">
+                <div class="usage-example on-dark">
+                    <div class="logo-horizontal">
+                        <svg class="logo-symbol" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 40px; height: 40px;">
+                            <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#FAFAFA" opacity="0.3"/>
+                            <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#FAFAFA" opacity="0.5"/>
+                            <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#FAFAFA" opacity="0.9"/>
+                            <circle cx="50" cy="42" r="4" fill="#FAFAFA"/>
+                            <line x1="50" y1="25" x2="50" y2="15" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                            <line x1="50" y1="58" x2="50" y2="68" stroke="#FAFAFA" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                        </svg>
+                        <div class="logo-wordmark" style="font-size: 1.5rem;">
+                            Clipping<span class="ai">.AI</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="usage-example on-light">
+                    <div class="logo-horizontal">
+                        <svg class="logo-symbol" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 40px; height: 40px;">
+                            <path d="M20 70 L50 40 L80 70 L50 85 Z" fill="#0A0A0A" opacity="0.3"/>
+                            <path d="M15 50 L50 20 L85 50 L50 65 Z" fill="#0A0A0A" opacity="0.5"/>
+                            <path d="M25 45 L50 25 L75 45 L50 58 Z" fill="#0A0A0A" opacity="0.9"/>
+                            <circle cx="50" cy="42" r="4" fill="#0A0A0A"/>
+                            <line x1="50" y1="25" x2="50" y2="15" stroke="#0A0A0A" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                            <line x1="50" y1="58" x2="50" y2="68" stroke="#0A0A0A" stroke-width="1.5" opacity="0.4" stroke-linecap="round"/>
+                        </svg>
+                        <div class="logo-wordmark" style="font-size: 1.5rem;">
+                            Clipping<span class="ai">.AI</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

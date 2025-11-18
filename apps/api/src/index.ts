@@ -20,6 +20,7 @@ if (result.error) {
     hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
     hasTavilyKey: !!process.env.TAVILY_API_KEY,
     hasGoogleKey: !!process.env.GOOGLE_AI_API_KEY,
+    hasResendKey: !!process.env.RESEND_API_KEY,
   });
 }
 
@@ -42,6 +43,8 @@ app.get('/health', (req, res) => {
 // Import routes
 import onboardingRoutes from './routes/onboarding.js';
 import reportsRoutes from './routes/reports.js';
+import authRoutes from './routes/auth.js';
+import jobsRoutes from './routes/jobs.js';
 
 // API routes
 app.get('/api', (req, res) => {
@@ -49,8 +52,10 @@ app.get('/api', (req, res) => {
 });
 
 // Mount routes
+app.use('/api/auth', authRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Error handling
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -75,6 +80,33 @@ process.on('SIGTERM', async () => {
   server.close(() => {
     console.log('HTTP server closed');
   });
+
+  // Cleanup job queue
+  try {
+    const { cleanup } = await import('./services/jobQueue.js');
+    await cleanup();
+  } catch (error) {
+    console.error('Error cleaning up job queue:', error);
+  }
+
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('\nSIGINT signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+
+  // Cleanup job queue
+  try {
+    const { cleanup } = await import('./services/jobQueue.js');
+    await cleanup();
+  } catch (error) {
+    console.error('Error cleaning up job queue:', error);
+  }
+
   await prisma.$disconnect();
   process.exit(0);
 });

@@ -33,9 +33,10 @@ model User {
   subscriptionTier   SubscriptionTier   @default(free) @map("subscription_tier")
   subscriptionStatus SubscriptionStatus @default(active) @map("subscription_status")
 
-  reportConfigs    ReportConfig[]
-  generatedReports GeneratedReport[]
-  articleFeedback  ArticleFeedback[]
+  reportConfigs      ReportConfig[]
+  generatedReports   GeneratedReport[]
+  articleFeedback    ArticleFeedback[]
+  companyKnowledge   CompanyKnowledgeBase?
 
   @@map("users")
 }
@@ -205,4 +206,47 @@ model ArticleFeedback {
   @@index([generatedReportId])
   @@index([userId])
   @@map("article_feedback")
+}
+
+// ============================================================================
+// COMPANY KNOWLEDGE BASE
+// ============================================================================
+
+model CompanyKnowledgeBase {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  companyName    String   @map("company_name")
+  companyDomain  String   @map("company_domain")
+  industry       String?
+
+  // Structured knowledge framework
+  competitors    String[] // List of known competitors
+  marketPosition String?  @map("market_position") // e.g., "Leading provider of...", "Emerging player in..."
+  keyProducts    String[] @map("key_products") // Main products/services
+  targetMarket   String?  @map("target_market") // e.g., "Enterprise B2B", "SMB SaaS"
+  strategicFocus String[] @map("strategic_focus") // e.g., ["AI integration", "International expansion"]
+
+  // Recent developments (last updated from reports)
+  recentNews     Json?    @map("recent_news")
+  // Example: [
+  //   { "date": "2025-11-15", "summary": "Launched new AI product" },
+  //   { "date": "2025-11-10", "summary": "Raised $50M Series B" }
+  // ]
+
+  // Competitive intelligence
+  competitiveDynamics Json? @map("competitive_dynamics")
+  // Example: {
+  //   "CompetitorA": { "strength": "market leader", "weakness": "slow innovation" },
+  //   "CompetitorB": { "strength": "price leader", "weakness": "limited features" }
+  // }
+
+  // Metadata
+  reportCount    Int      @default(0) @map("report_count") // Number of reports generated
+  lastUpdated    DateTime @default(now()) @map("last_updated")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("company_knowledge_base")
 }

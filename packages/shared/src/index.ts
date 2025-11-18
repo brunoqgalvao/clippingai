@@ -29,7 +29,7 @@ export interface CompanyDetectionResult {
 
 export interface SuggestedReport {
   id: string;
-  type: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
+  type: 'media_monitoring';
   title: string;
   description: string;
   estimatedArticles: number;
@@ -63,7 +63,7 @@ export const signupSchema = z.object({
 
 export const createReportSchema = z.object({
   description: z.string().min(10, 'Description is too short'),
-  reportType: z.enum(['competitor_landscape', 'market_landscape', 'media_monitoring']),
+  reportType: z.enum(['media_monitoring']).default('media_monitoring'),
   frequency: z.enum(['daily', 'weekly', 'biweekly', 'monthly']),
   scheduleTime: z.string(),
   recipients: z.array(emailSchema).optional(),

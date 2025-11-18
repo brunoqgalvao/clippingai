@@ -1,16 +1,11 @@
-import { useState, useEffect } from 'react';
-import { ArrowRight, Sparkles, Target, TrendingUp, Mail } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, Target, TrendingUp, Mail } from 'lucide-react';
+import Logo, { LogoSymbol } from '../components/Logo';
 import '../styles/landing.css';
 
 export default function Landing() {
   const [email, setEmail] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showDataPoints, setShowDataPoints] = useState(false);
-
-  useEffect(() => {
-    // Trigger data points animation after mount
-    setTimeout(() => setShowDataPoints(true), 500);
-  }, []);
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,65 +20,30 @@ export default function Landing() {
 
   return (
     <div className="landing-page">
-      {/* Animated Background */}
-      <div className="bg-grid"></div>
-      <div className="bg-gradient"></div>
-
-      {/* Floating Data Points */}
-      {showDataPoints && (
-        <div className="floating-data">
-          <div className="data-point" style={{ top: '15%', left: '10%', animationDelay: '0s' }}>
-            <span className="data-label">Competitor X</span>
-            <span className="data-value">+127% mentions</span>
-          </div>
-          <div className="data-point" style={{ top: '25%', right: '15%', animationDelay: '0.3s' }}>
-            <span className="data-label">Market Shift</span>
-            <span className="data-value">Detected 2h ago</span>
-          </div>
-          <div className="data-point" style={{ bottom: '30%', left: '8%', animationDelay: '0.6s' }}>
-            <span className="data-label">Industry News</span>
-            <span className="data-value">12 new insights</span>
-          </div>
-          <div className="data-point" style={{ bottom: '20%', right: '12%', animationDelay: '0.9s' }}>
-            <span className="data-label">Your Company</span>
-            <span className="data-value">8 media mentions</span>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <header className="header">
         <a href="/" className="logo">
-          <Sparkles className="logo-icon" />
-          <span className="logo-text">Clipping.AI</span>
+          <Logo size={50} showWordmark={true} variant="light" />
         </a>
         <nav className="nav">
           <a href="#features">Features</a>
           <a href="#how-it-works">How it Works</a>
-          <button className="btn-secondary">Sign In</button>
+          <a href="/login" className="btn-secondary">Sign In</a>
         </nav>
       </header>
 
       {/* Hero Section */}
       <main className="hero">
         <div className="hero-content">
-          <div className="hero-badge">
-            <span className="badge-dot"></span>
-            <span>AI-Powered Competitive Intelligence</span>
-          </div>
-
           <h1 className="hero-title">
-            Your competitors are
+            Competitive Intelligence
             <br />
-            making moves.
-            <br />
-            <span className="title-highlight">Know in 30 seconds.</span>
+            Delivered Weekly
           </h1>
 
           <p className="hero-subtitle">
-            Enter your work email. We'll instantly analyze your company, detect your
-            competitors, and generate your first intelligence report. All in the time it
-            takes to read this sentence.
+            Track your competitors, monitor industry trends, and stay informed with
+            AI-powered intelligence reports delivered to your inbox.
           </p>
 
           {/* Email Form */}
@@ -117,7 +77,7 @@ export default function Landing() {
               </button>
             </div>
             <p className="form-hint">
-              Free trial • No credit card • Get your first report in ~30 seconds
+              Free trial • No credit card required
             </p>
           </form>
 
@@ -130,49 +90,8 @@ export default function Landing() {
               <div className="avatar">👤</div>
             </div>
             <p className="proof-text">
-              <strong>2,847 founders</strong> already tracking their competition
+              <strong>2,847 founders</strong> tracking their competition
             </p>
-          </div>
-        </div>
-
-        {/* Demo Preview */}
-        <div className="hero-demo">
-          <div className="demo-card">
-            <div className="demo-header">
-              <div className="demo-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <span className="demo-title">Intelligence Report Preview</span>
-            </div>
-            <div className="demo-content">
-              <div className="demo-report">
-                <div className="report-header">
-                  <h3>Competitor Landscape - Week of Nov 11</h3>
-                  <span className="report-badge">Just generated</span>
-                </div>
-                <div className="report-summary">
-                  <p className="summary-label">TL;DR</p>
-                  <p className="summary-text">
-                    Competitor X launched AI features, Y raised $50M Series B, and Z
-                    announced enterprise pricing changes. Market shifting toward
-                    AI-native solutions.
-                  </p>
-                </div>
-                <div className="report-articles">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="article-preview" style={{ animationDelay: `${i * 0.2}s` }}>
-                      <div className="article-image"></div>
-                      <div className="article-content">
-                        <h4>Competitor {i === 1 ? 'X' : i === 2 ? 'Y' : 'Z'} Major Update</h4>
-                        <p>Key strategic move detected in market...</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </main>
@@ -223,7 +142,7 @@ export default function Landing() {
 
           <div className="feature-card media">
             <div className="card-icon">
-              <Sparkles size={32} />
+              <LogoSymbol size={32} variant="light" />
             </div>
             <h3>Media Monitoring</h3>
             <p>
@@ -309,8 +228,7 @@ export default function Landing() {
       <footer className="footer">
         <div className="footer-content">
           <div className="footer-brand">
-            <Sparkles size={24} />
-            <span>Clipping.AI</span>
+            <Logo size={40} showWordmark={true} variant="light" />
           </div>
           <div className="footer-links">
             <a href="/privacy">Privacy</a>

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import {
-  Sparkles,
   Building2,
   TrendingUp,
   Target,
@@ -13,14 +12,15 @@ import {
   Edit3,
   AlertCircle
 } from 'lucide-react';
+import Logo, { LogoSymbol } from '../components/Logo';
 import type { CompanyDetectionResult } from '@clippingai/shared';
-import { detectCompany, processManualCompany, generateReport, type GeneratedReport } from '../lib/api';
+import { detectCompany, processManualCompany, generateReport, signup, type GeneratedReport } from '../lib/api';
 import '../styles/onboarding.css';
 
 type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'generating' | 'viewing' | 'questions' | 'signup' | 'complete';
 
 interface ReportSuggestion {
-  type: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
+  type: 'media_monitoring';
   title: string;
   description: string;
   icon: React.ReactNode;
@@ -30,10 +30,15 @@ interface ReportSuggestion {
 export default function Onboarding() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const email = searchParams.get('email') || '';
+  const stepParam = searchParams.get('step') as OnboardingStep | null;
 
-  const [step, setStep] = useState<OnboardingStep>('detecting');
-  const [companyInfo, setCompanyInfo] = useState<CompanyDetectionResult | null>(null);
+  // Get company info from navigation state (if coming from report page)
+  const stateData = location.state as { companyInfo?: CompanyDetectionResult; skipQuestions?: boolean } | null;
+
+  const [step, setStep] = useState<OnboardingStep>(stepParam || 'detecting');
+  const [companyInfo, setCompanyInfo] = useState<CompanyDetectionResult | null>(stateData?.companyInfo || null);
   const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
   const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
@@ -42,10 +47,14 @@ export default function Onboarding() {
   const [reportData, setReportData] = useState<GeneratedReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState(0);
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
 
   // Real company detection using API
   useEffect(() => {
-    if (step === 'detecting' && email) {
+    // Only detect if we're on the detecting step, have an email, and don't already have company info
+    if (step === 'detecting' && email && !companyInfo) {
       detectCompany(email)
         .then((result) => {
           setCompanyInfo(result);
@@ -67,7 +76,7 @@ export default function Onboarding() {
           setStep('verify');
         });
     }
-  }, [step, email]);
+  }, [step, email, companyInfo]);
 
   // Generate report suggestions
   useEffect(() => {
@@ -142,7 +151,7 @@ export default function Onboarding() {
 
         // Navigate to report page with data
         setTimeout(() => {
-          navigate('/report', {
+          navigate(`/report?email=${encodeURIComponent(email)}`, {
             state: {
               reportData: report,
               companyInfo
@@ -163,15 +172,75 @@ export default function Onboarding() {
     }
   };
 
-  const handleSignup = () => {
-    // Simulate account creation
-    setTimeout(() => {
+  const handleSignup = async () => {
+    if (!password || password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+
+    setSignupLoading(true);
+    setError(null);
+
+    try {
+      await signup({
+        email,
+        password,
+        name: name || undefined,
+        companyName: companyInfo?.name,
+        companyDomain: companyInfo?.domain,
+      });
+
+      // Account created successfully
       setStep('complete');
-    }, 1500);
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create account');
+    } finally {
+      setSignupLoading(false);
+    }
   };
 
-  const handleVerifyCompany = () => {
-    setStep('suggestions');
+  const handleVerifyCompany = async () => {
+    // Go straight to generating the report
+    setStep('generating');
+    setError(null);
+    setGenerationProgress(0);
+
+    try {
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => Math.min(prev + 5, 95));
+      }, 1000);
+
+      // Generate media monitoring report
+      const report = await generateReport({
+        companyName: companyInfo!.name,
+        companyDomain: companyInfo!.domain,
+        industry: companyInfo!.industry,
+        competitors: companyInfo!.competitors,
+        reportType: 'media_monitoring',
+        dateRange: 7
+      });
+
+      clearInterval(progressInterval);
+      setGenerationProgress(100);
+      setReportData(report);
+      setReportId('generated-' + Date.now());
+
+      // Navigate to report page with data
+      setTimeout(() => {
+        navigate(`/report?email=${encodeURIComponent(email)}`, {
+          state: {
+            reportData: report,
+            companyInfo
+          }
+        });
+      }, 500);
+    } catch (err) {
+      console.error('Report generation error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to generate report. Please try again.');
+      setStep('verify');
+    }
   };
 
   const handleNotMyCompany = () => {
@@ -185,10 +254,45 @@ export default function Onboarding() {
       const result = await processManualCompany(manualInput);
       setCompanyInfo(result);
       setSelectedLogo(result.logo || null);
-      setStep('suggestions');
+
+      // Go straight to generating the report
+      setStep('generating');
+      setError(null);
+      setGenerationProgress(0);
+
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => Math.min(prev + 5, 95));
+      }, 1000);
+
+      // Generate media monitoring report
+      const report = await generateReport({
+        companyName: result.name,
+        companyDomain: result.domain,
+        industry: result.industry,
+        competitors: result.competitors,
+        reportType: 'media_monitoring',
+        dateRange: 7
+      });
+
+      clearInterval(progressInterval);
+      setGenerationProgress(100);
+      setReportData(report);
+      setReportId('generated-' + Date.now());
+
+      // Navigate to report page with data
+      setTimeout(() => {
+        navigate(`/report?email=${encodeURIComponent(email)}`, {
+          state: {
+            reportData: report,
+            companyInfo: result
+          }
+        });
+      }, 500);
     } catch (err) {
       console.error('Manual input error:', err);
       setError('Failed to process company information. Please try again.');
+      setStep('manual');
     }
   };
 
@@ -205,8 +309,7 @@ export default function Onboarding() {
       {/* Header */}
       <header className="onboarding-header">
         <a href="/" className="logo">
-          <Sparkles className="logo-icon" />
-          <span className="logo-text">Clipping.AI</span>
+          <Logo size={50} showWordmark={true} variant="light" />
         </a>
       </header>
 
@@ -490,22 +593,22 @@ export default function Onboarding() {
               <div className="generating-animation">
                 <div className="report-icon-wrapper">
                   <div className="rotating-border"></div>
-                  <Sparkles size={64} className="sparkles-icon" />
+                  <LogoSymbol size={64} variant="light" className="sparkles-icon" />
                 </div>
               </div>
 
               <h1 className="step-title">
-                Generating your intelligence report
+                Generating your media monitoring digest
               </h1>
 
               <div className="generation-progress">
                 <div className="progress-item completed">
                   <Check size={20} />
-                  <span>Searching the web for latest updates...</span>
+                  <span>Searching for latest news and articles...</span>
                 </div>
                 <div className="progress-item completed">
                   <Check size={20} />
-                  <span>Analyzing competitor activities...</span>
+                  <span>Analyzing industry trends and competitor activities...</span>
                 </div>
                 <div className="progress-item active">
                   <Loader2 className="spinner" size={20} />
@@ -513,7 +616,7 @@ export default function Onboarding() {
                 </div>
                 <div className="progress-item">
                   <div className="item-dot"></div>
-                  <span>Creating beautiful report...</span>
+                  <span>Creating your personalized digest...</span>
                 </div>
               </div>
 
@@ -601,7 +704,10 @@ export default function Onboarding() {
                 Almost done! Create your account to start receiving reports
               </p>
 
-              <div className="signup-form">
+              <form className="signup-form" onSubmit={(e) => {
+                e.preventDefault();
+                handleSignup();
+              }}>
                 <div className="form-section">
                   <label className="form-label">Email</label>
                   <input
@@ -618,6 +724,9 @@ export default function Onboarding() {
                     type="password"
                     placeholder="Create a password (min 8 characters)"
                     className="text-input"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={signupLoading}
                   />
                   <p className="input-hint">
                     We'll use this to secure your account and dashboard
@@ -630,19 +739,39 @@ export default function Onboarding() {
                     type="text"
                     placeholder="Your name"
                     className="text-input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={signupLoading}
                   />
                 </div>
-              </div>
 
-              <div className="step-actions">
-                <button
-                  className="btn-primary-large"
-                  onClick={handleSignup}
-                >
-                  Create Account & Start Receiving Reports
-                  <Check size={20} />
-                </button>
-              </div>
+                {error && (
+                  <div className="error-message">
+                    <AlertCircle size={16} />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <div className="step-actions">
+                  <button
+                    type="submit"
+                    className="btn-primary-large"
+                    disabled={signupLoading || !password}
+                  >
+                    {signupLoading ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin" />
+                        Creating Account...
+                      </>
+                    ) : (
+                      <>
+                        Create Account & Start Receiving Reports
+                        <Check size={20} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
