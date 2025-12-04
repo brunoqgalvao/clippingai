@@ -11,6 +11,7 @@ import {
   formatKnowledgeForPrompt,
   type CompanyKnowledge,
 } from './companyKnowledge.js';
+import { saveImageLocally, saveBase64ImageLocally } from './imageStorage.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -62,6 +63,7 @@ export interface ReportArticle {
 }
 
 export interface GeneratedReportContent {
+  title: string; // Report headline
   summary: string; // TL;DR
   articles: ReportArticle[];
   metadata?: {
@@ -86,11 +88,52 @@ interface SearchResult {
 }
 
 // ============================================================================
+// DEBUG TRACE - Hidden agent inspection
+// ============================================================================
+
+interface AgentTraceStep {
+  step: string;
+  timestamp: number;
+  prompt?: string;
+  response?: string;
+  data?: any;
+}
+
+interface AgentTrace {
+  startTime: number;
+  endTime?: number;
+  input: ReportGenerationInput;
+  steps: AgentTraceStep[];
+}
+
+// Global trace storage - always populated
+let currentTrace: AgentTrace | null = null;
+
+export function getAgentTrace(): AgentTrace | null {
+  return currentTrace;
+}
+
+export function clearAgentTrace(): void {
+  currentTrace = null;
+}
+
+function traceStep(step: string, data?: { prompt?: string; response?: string; data?: any }): void {
+  if (!currentTrace) return;
+  currentTrace.steps.push({
+    step,
+    timestamp: Date.now(),
+    ...data,
+  });
+}
+
+// ============================================================================
 // STEP 1: QUERY PLANNING
 // ============================================================================
 
 async function planSearchQueries(input: ReportGenerationInput): Promise<SearchQuery[]> {
   const prompt = buildQueryPlanningPrompt(input);
+
+  traceStep('query_planning_start', { prompt });
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
@@ -100,6 +143,11 @@ async function planSearchQueries(input: ReportGenerationInput): Promise<SearchQu
 
   const response = message.content[0].type === 'text' ? message.content[0].text : '';
   const queries = parseQueryPlanningResponse(response);
+
+  traceStep('query_planning_complete', {
+    response,
+    data: { queriesGenerated: queries.length, queries }
+  });
 
   console.log(`✅ Planned ${queries.length} search queries`);
   return queries;
@@ -161,6 +209,8 @@ function parseQueryPlanningResponse(response: string): SearchQuery[] {
 async function executeSearches(queries: SearchQuery[], dateRange = 7): Promise<SearchResult[]> {
   const client = getTavilyClient();
 
+  traceStep('search_start', { data: { queryCount: queries.length, dateRange } });
+
   // Calculate date threshold for filtering
   const dateThreshold = new Date();
   dateThreshold.setDate(dateThreshold.getDate() - dateRange);
@@ -217,6 +267,19 @@ async function executeSearches(queries: SearchQuery[], dateRange = 7): Promise<S
   const allResults = resultsArrays.flat();
 
   const dateRangeText = dateRange >= 365 ? 'all time' : `last ${dateRange} days`;
+
+  traceStep('search_complete', {
+    data: {
+      totalResults: allResults.length,
+      dateRange: dateRangeText,
+      resultsByQuery: queries.map((q, i) => ({
+        query: q.query,
+        resultCount: resultsArrays[i]?.length || 0
+      })),
+      results: allResults.map(r => ({ title: r.title, url: r.url, score: r.score }))
+    }
+  });
+
   console.log(`✅ Found ${allResults.length} total search results from ${dateRangeText}`);
   return allResults;
 }
@@ -232,6 +295,8 @@ async function extractAndRankArticles(
 ): Promise<SearchResult[]> {
   const prompt = buildExtractionPrompt(results, input, targetCount);
 
+  traceStep('extraction_start', { prompt, data: { candidateCount: results.length, targetCount } });
+
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: 4096,
@@ -245,6 +310,14 @@ async function extractAndRankArticles(
     .map((idx) => results[idx])
     .filter(Boolean)
     .slice(0, targetCount);
+
+  traceStep('extraction_complete', {
+    response,
+    data: {
+      selectedIndices,
+      selectedArticles: selected.map(s => ({ title: s.title, url: s.url }))
+    }
+  });
 
   console.log(`✅ Selected ${selected.length} articles from ${results.length} results`);
   return selected;
@@ -304,84 +377,172 @@ function parseExtractionResponse(response: string): number[] {
 }
 
 // ============================================================================
-// STEP 4: DEEP RESEARCH PER ARTICLE
+// STEP 4: AD-HOC DEEP RESEARCH (Agentic Loop)
 // ============================================================================
 
-async function deepResearchArticle(
+interface ResearchDecision {
+  action: 'search' | 'done';
+  reasoning: string;
+  queries?: string[];
+  confidence?: number; // 0-100, how confident the agent is that it has enough data
+}
+
+const MAX_RESEARCH_ITERATIONS = 3;
+
+async function adHocDeepResearch(
   article: SearchResult,
   input: ReportGenerationInput
 ): Promise<SearchResult[]> {
-  // Generate follow-up research queries for this specific article
-  const prompt = `You're doing deep research on this news article.
+  const allAdditionalSources: SearchResult[] = [];
+  let iteration = 0;
 
-Original Article:
+  traceStep('deep_research_start', {
+    data: { articleTitle: article.title, maxIterations: MAX_RESEARCH_ITERATIONS }
+  });
+
+  while (iteration < MAX_RESEARCH_ITERATIONS) {
+    iteration++;
+
+    // Build context of what we have so far
+    const sourcesContext = allAdditionalSources.length > 0
+      ? `\n\nADDITIONAL SOURCES ALREADY GATHERED (${allAdditionalSources.length}):\n${allAdditionalSources.map((s, i) => `[${i + 1}] ${s.title}\nURL: ${s.url}\nPreview: ${s.content.slice(0, 200)}...`).join('\n\n')}`
+      : '';
+
+    const prompt = `You are a research agent analyzing an article for a media intelligence report about ${input.companyName} (${input.industry || 'their industry'}).
+
+PRIMARY ARTICLE:
 Title: ${article.title}
-Content: ${article.content.slice(0, 500)}...
+URL: ${article.url}
+Content: ${article.content}
+${sourcesContext}
 
-Generate 2-3 HIGHLY SPECIFIC follow-up search queries to verify and expand on facts in this article:
-- Background/context on specific companies, people, or technologies MENTIONED in the article
-- Recent related developments in the same specific topic
-- Technical details or data about the specific topic
-- Additional sources covering this EXACT same story
+YOUR TASK: Decide if you need MORE information to write a comprehensive, well-sourced analysis.
 
-RULES:
-- Queries must be directly related to the article's specific topic
-- Focus on verifying and expanding the article's claims
-- Use specific names, products, or events from the article
-- DO NOT create general industry queries
+Consider:
+1. Do you have enough context to explain the significance of this news?
+2. Are there specific claims, companies, or technologies that need verification?
+3. Would additional sources strengthen the analysis or add valuable perspective?
+4. Do you have enough data points to make the article useful for ${input.companyName}?
+
+DECIDE:
+- If you have ENOUGH information to write a solid article → action: "done"
+- If you NEED more data → action: "search" with 1-2 SPECIFIC queries
+
+RULES for queries (if searching):
+- Be VERY SPECIFIC - use exact names, products, or events from the article
+- Focus on: verification, additional context, competitor info, market data
+- DO NOT search for general industry information
+- Each query should fill a specific knowledge gap
 
 Return ONLY valid JSON:
 {
-  "queries": ["very specific query 1", "very specific query 2"]
+  "action": "done" or "search",
+  "reasoning": "why you made this decision",
+  "confidence": 85,
+  "queries": ["specific query 1", "specific query 2"]
 }`;
 
-  try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 512,
-      messages: [{ role: 'user', content: prompt }],
+    traceStep(`deep_research_iteration_${iteration}_prompt`, {
+      prompt,
+      data: { iteration, sourcesGatheredSoFar: allAdditionalSources.length }
     });
 
-    const response = message.content[0].type === 'text' ? message.content[0].text : '';
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return [];
+    try {
+      const message = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      });
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    const queries = parsed.queries || [];
+      const response = message.content[0].type === 'text' ? message.content[0].text : '';
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
 
-    console.log(`  🔎 Deep research: ${queries.length} follow-up queries for "${article.title}"`);
-
-    // Execute follow-up searches
-    const client = getTavilyClient();
-    const additionalResults: SearchResult[] = [];
-
-    for (const query of queries) {
-      try {
-        const response = await client.search(query, {
-          searchDepth: 'advanced',
-          maxResults: 3,
-        });
-
-        const results = response.results.map((r: any) => ({
-          title: r.title,
-          url: r.url,
-          content: r.content,
-          publishedDate: r.publishedDate,
-          score: r.score,
-        }));
-
-        additionalResults.push(...results);
-      } catch (error) {
-        console.error(`Error in deep research query "${query}":`, error);
+      if (!jsonMatch) {
+        console.log(`  ⚠️ No valid JSON in research decision, stopping`);
+        break;
       }
-    }
 
-    console.log(`  ✅ Found ${additionalResults.length} additional sources`);
-    return additionalResults;
-  } catch (error) {
-    console.error(`Error generating deep research queries:`, error);
-    return [];
+      const decision: ResearchDecision = JSON.parse(jsonMatch[0]);
+
+      traceStep(`deep_research_iteration_${iteration}_decision`, {
+        response,
+        data: decision
+      });
+
+      console.log(`  🤔 Iteration ${iteration}: ${decision.action} (confidence: ${decision.confidence || 'N/A'}%) - ${decision.reasoning.slice(0, 80)}...`);
+
+      // Agent decided it has enough data
+      if (decision.action === 'done') {
+        console.log(`  ✅ Agent satisfied with ${allAdditionalSources.length} additional sources`);
+        break;
+      }
+
+      // Agent wants more data - execute searches
+      if (decision.queries && decision.queries.length > 0) {
+        const client = getTavilyClient();
+
+        for (const query of decision.queries) {
+          try {
+            traceStep(`deep_research_search`, { data: { query, iteration } });
+
+            const searchResponse = await client.search(query, {
+              searchDepth: 'advanced',
+              maxResults: 3,
+            });
+
+            const results = searchResponse.results.map((r: any) => ({
+              title: r.title,
+              url: r.url,
+              content: r.content,
+              publishedDate: r.publishedDate,
+              score: r.score,
+            }));
+
+            // Dedupe by URL
+            const newResults = results.filter(
+              (r: SearchResult) => !allAdditionalSources.some(existing => existing.url === r.url)
+            );
+
+            traceStep(`deep_research_search_results`, {
+              data: {
+                query,
+                resultsFound: results.length,
+                newResults: newResults.length,
+                results: newResults.map((r: SearchResult) => ({ title: r.title, url: r.url }))
+              }
+            });
+
+            allAdditionalSources.push(...newResults);
+            console.log(`    🔍 "${query}" → ${newResults.length} new sources`);
+          } catch (error) {
+            console.error(`    ❌ Error searching "${query}":`, error);
+          }
+        }
+      }
+
+      // High confidence threshold - stop early if agent is confident
+      if (decision.confidence && decision.confidence >= 90) {
+        console.log(`  ✅ High confidence (${decision.confidence}%), stopping research`);
+        break;
+      }
+
+    } catch (error) {
+      console.error(`  ❌ Error in research iteration ${iteration}:`, error);
+      break;
+    }
   }
+
+  traceStep('deep_research_complete', {
+    data: {
+      articleTitle: article.title,
+      iterations: iteration,
+      totalAdditionalSources: allAdditionalSources.length,
+      sources: allAdditionalSources.map(s => ({ title: s.title, url: s.url }))
+    }
+  });
+
+  console.log(`  📚 Deep research complete: ${allAdditionalSources.length} additional sources after ${iteration} iteration(s)`);
+  return allAdditionalSources;
 }
 
 // ============================================================================
@@ -393,11 +554,13 @@ async function summarizeArticles(
   input: ReportGenerationInput,
   companyKnowledge?: CompanyKnowledge | null
 ): Promise<ReportArticle[]> {
+  traceStep('summarization_start', { data: { articleCount: articles.length } });
+
   // PARALLELIZE: Deep research + summarize all articles concurrently
   const summaryPromises = articles.map(async (article) => {
     try {
-      // Step 1: Do deep research for this article
-      const additionalSources = await deepResearchArticle(article, input);
+      // Step 1: Ad-hoc deep research (agent decides when it has enough data)
+      const additionalSources = await adHocDeepResearch(article, input);
 
       // Step 2: Summarize with enriched context and company knowledge
       const summary = await summarizeArticle(article, additionalSources, input, companyKnowledge);
@@ -410,6 +573,13 @@ async function summarizeArticles(
   });
 
   const summaries = (await Promise.all(summaryPromises)).filter((s): s is ReportArticle => s !== null);
+
+  traceStep('summarization_complete', {
+    data: {
+      summarizedCount: summaries.length,
+      articles: summaries.map(s => ({ title: s.title, sourceCount: s.sources.length }))
+    }
+  });
 
   console.log(`✅ Summarized ${summaries.length} articles`);
   return summaries;
@@ -440,15 +610,21 @@ ${additionalSources.map((s, idx) => `[${idx + 2}] ${s.title}\n${s.url}\n${s.cont
 
 **CRITICAL GROUNDING RULES - DO NOT VIOLATE:**
 1. ONLY use information EXPLICITLY stated in the sources above - DO NOT make up ANY information
-2. EVERY fact, claim, or data point MUST cite a source [1], [2], etc.
+2. Use citations SPARINGLY - only cite key facts, not every sentence. Place citations at END of paragraphs, not after every clause.
 3. DO NOT mention ANY URLs except those provided in the sources list
 4. DO NOT invent quotes, statistics, percentages, dates, names, or details not in the sources
 5. DO NOT make assumptions or extrapolations beyond what's explicitly stated
 6. If the sources don't mention ${input.companyName} directly, analyze the INDUSTRY relevance ONLY based on what's in the sources
 7. If you cannot find specific information, acknowledge it or omit it - NEVER fabricate
 8. DO NOT add context or background information not found in the provided sources
-9. Every sentence with a factual claim MUST have a citation [1], [2], etc.
+9. Aim for 3-5 citations per article MAX - cite only the most important facts
 10. If uncertain about ANY detail, leave it out rather than guess
+
+**COMPETITIVE INTELLIGENCE - CRITICAL:**
+If the article mentions a product, company, or technology with the SAME NAME as ${input.companyName} (or similar):
+- This is a MAJOR insight - highlight it prominently in the Context & Analysis section
+- Note: "This development is particularly relevant as [competitor] has launched/uses a product with the same name as your company"
+- Analyze brand confusion risks, market positioning implications, or differentiation opportunities
 
 **STRUCTURE:**
 
@@ -461,25 +637,28 @@ What happened and why it matters to the industry/space.
 **3. MAIN ANALYSIS (300-400 words total)**
 Write short, punchy sections:
 
-**What Happened** [cite EVERY fact]
-2-3 sentences of key facts. Every sentence must cite [1], [2], etc.
+**What Happened**
+2-3 sentences of key facts. Add a single citation at the end of this section [1].
 
 **Industry Implications** (Main section - 2-3 short paragraphs)
-- If sources mention ${input.companyName}: explain direct impact [cite sources]
-- If sources DON'T mention ${input.companyName}: explain why this industry development matters to companies in this space [cite sources]
-- Market trends or competitive dynamics [cite sources]
+- If sources mention ${input.companyName}: explain direct impact
+- If sources DON'T mention ${input.companyName}: explain why this industry development matters to companies in this space
+- Market trends or competitive dynamics
+- Add 1-2 citations at key points only
 
 **Context & Analysis** (1-2 paragraphs)
-- Broader industry context [cite sources]
-- What this signals about the market [cite sources]
+- Broader industry context
+- What this signals about the market
+- If a NAMING CONFLICT exists (competitor product/company shares name with ${input.companyName}), call this out explicitly here
+- Add citation only for key claims
 
 **CRITICAL REQUIREMENTS:**
-- EVERY claim must have [1], [2], or [3] citation pointing to the exact source
+- Use 3-5 citations TOTAL per article - place them strategically, not after every clause
 - ONLY state facts explicitly found in the provided sources - NO fabrication
 - DO NOT include ANY links, URLs, or web addresses except those in the sources list
 - Keep paragraphs short (2-4 sentences max)
 - If uncertain about ANY detail, omit it - NEVER speculate or make up information
-- Professional, grounded tone
+- Professional, grounded tone - write like The Economist, not an academic paper
 - Better to have a shorter article with verified facts than a longer one with invented details
 
 **Image Description**: Sophisticated editorial image concept based on the actual news.
@@ -529,13 +708,18 @@ Return ONLY valid JSON:
 }
 
 // ============================================================================
-// STEP 5: REPORT SYNTHESIS (TL;DR)
+// STEP 5: REPORT SYNTHESIS (Title + TL;DR)
 // ============================================================================
+
+interface ReportSynthesis {
+  title: string;
+  summary: string;
+}
 
 async function synthesizeReport(
   articles: ReportArticle[],
   input: ReportGenerationInput
-): Promise<string> {
+): Promise<ReportSynthesis> {
   const articlesText = articles
     .map((a) => `- ${a.title}: ${a.summary}`)
     .join('\n');
@@ -563,40 +747,71 @@ ${articlesText}
 - If you mention specific developments, they must be from the articles above
 - Keep synthesis factual and grounded in the provided content
 
-Create a TL;DR with this structure:
+Create a report with this EXACT JSON structure:
 
-**Key Insights (3-5 bullet points)**
-Start with the time period, then list the most critical takeaways:
+{
+  "title": "A compelling 5-10 word headline capturing the week's biggest story or theme (no markdown, no quotes)",
+  "summary": "The full TL;DR content (see format below)"
+}
+
+**Title Guidelines:**
+- Capture the single most important theme or development
+- Be specific and newsworthy (e.g., "AI Automation Market Heats Up as Competitors Raise $100M+")
+- No generic titles like "Weekly Update" or "Key Insights"
+- 5-10 words, punchy, executive-level
+
+**Summary Format (for the "summary" field):**
+**Key Insights**
 • [Time period context and biggest theme]
 • [Key development #1]
 • [Key development #2]
 • [Additional critical insight if relevant]
 
-**Strategic Context (1-2 short paragraphs)**
+**Strategic Context**
 Write 1-2 concise paragraphs (3-4 sentences each) that:
 - Explain what these developments mean for ${input.companyName}
 - Highlight opportunities, threats, or actions to consider
-- Provide forward-looking insights
 
 **Format Requirements**:
 - Bullets must start with •
 - Keep paragraphs short and punchy
-- Use ONLY specific numbers/facts from the articles above - DO NOT invent statistics
+- Use ONLY specific numbers/facts from the articles above
 - Direct, CEO-briefing tone
-- DO NOT include information not present in the article summaries
-- Better to be concise with verified facts than verbose with speculation
 
-Return ONLY the formatted text (bullets then paragraphs, separated by blank lines).`;
+Return ONLY valid JSON with "title" and "summary" fields.`;
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 1024,
+    max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const tldr = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
-  console.log(`✅ Generated TL;DR`);
-  return tldr;
+  let responseText = message.content[0].type === 'text' ? message.content[0].text.trim() : '';
+
+  // Strip markdown code blocks if present
+  if (responseText.startsWith('```json')) {
+    responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  } else if (responseText.startsWith('```')) {
+    responseText = responseText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+  }
+
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(responseText);
+    console.log(`✅ Generated report title: "${parsed.title}"`);
+    return {
+      title: parsed.title || `${input.companyName} Intelligence Report`,
+      summary: parsed.summary || '',
+    };
+  } catch (e) {
+    // Fallback: use the response as summary and generate a simple title
+    console.log(`⚠️ Could not parse JSON response, using fallback. Error: ${e}`);
+    console.log(`Response was: ${responseText.substring(0, 200)}...`);
+    return {
+      title: `${input.companyName} Weekly Intelligence`,
+      summary: responseText,
+    };
+  }
 }
 
 // ============================================================================
@@ -635,6 +850,7 @@ No text, no logos, no literal representations - purely conceptual and abstract.
 Think: editorial magazine cover, tech conference poster, modern art museum.`;
 
       // Generate image using gpt-image-1
+      // Note: gpt-image-1 only returns b64_json, not URLs
       const response = await openai.images.generate({
         model: 'gpt-image-1',
         prompt: conceptualPrompt,
@@ -643,11 +859,18 @@ Think: editorial magazine cover, tech conference poster, modern art museum.`;
         quality: 'medium', // 'low', 'medium', or 'high' - medium balances quality and speed
       });
 
-      if (response.data[0]?.url) {
-        article.imageUrl = response.data[0].url;
-        console.log(`  ✅ Generated image for "${article.title}"`);
+      // gpt-image-1 returns b64_json, not url
+      const imageData = response.data[0];
+      if (imageData?.b64_json) {
+        // Save base64 image locally
+        article.imageUrl = await saveBase64ImageLocally(imageData.b64_json, 'article');
+        console.log(`  ✅ Generated and saved image for "${article.title}"`);
+      } else if (imageData?.url) {
+        // Fallback for other models that return URLs
+        article.imageUrl = await saveImageLocally(imageData.url, 'article');
+        console.log(`  ✅ Generated and saved image for "${article.title}"`);
       } else {
-        console.log(`  ⚠️  No image URL returned for "${article.title}"`);
+        console.log(`  ⚠️  No image data returned for "${article.title}"`);
       }
     } catch (error) {
       console.error(`  ❌ Error generating image for "${article.title}":`, error instanceof Error ? error.message : 'Unknown error');
@@ -670,6 +893,14 @@ export async function generateReport(
 ): Promise<GeneratedReportContent> {
   const startTime = Date.now();
   console.log(`\n🚀 Starting report generation for ${input.companyName}...`);
+
+  // Always initialize trace for debugging
+  currentTrace = {
+    startTime,
+    input,
+    steps: [],
+  };
+  traceStep('report_generation_start', { data: { input } });
 
   try {
     // Step 0: Load company knowledge base (if userId provided)
@@ -731,9 +962,9 @@ export async function generateReport(
     console.log('\n📝 Step 4: Summarizing articles...');
     const summarizedArticles = await summarizeArticles(selectedArticles, input, companyKnowledge);
 
-    // Step 5: Synthesize TL;DR
-    console.log('\n✨ Step 5: Synthesizing TL;DR...');
-    const tldr = await synthesizeReport(summarizedArticles, input);
+    // Step 5: Synthesize Title + TL;DR
+    console.log('\n✨ Step 5: Synthesizing report title and summary...');
+    const synthesis = await synthesizeReport(summarizedArticles, input);
 
     // Step 6: Generate images
     console.log('\n🎨 Step 6: Generating images...');
@@ -742,8 +973,9 @@ export async function generateReport(
     const generationTime = Date.now() - startTime;
     console.log(`\n✅ Report generated successfully in ${(generationTime / 1000).toFixed(1)}s`);
 
-    const reportContent = {
-      summary: tldr,
+    const reportContent: GeneratedReportContent = {
+      title: synthesis.title,
+      summary: synthesis.summary,
       articles: summarizedArticles,
       metadata: {
         totalSearches: queries.length,
@@ -770,8 +1002,27 @@ export async function generateReport(
       }
     }
 
+    // Finalize trace
+    if (currentTrace) {
+      currentTrace.endTime = Date.now();
+      traceStep('report_generation_complete', {
+        data: {
+          generationTime,
+          articleCount: summarizedArticles.length,
+          totalSteps: currentTrace.steps.length
+        }
+      });
+    }
+
     return reportContent;
   } catch (error) {
+    // Log error in trace
+    if (currentTrace) {
+      traceStep('report_generation_error', {
+        data: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      currentTrace.endTime = Date.now();
+    }
     console.error('❌ Error generating report:', error);
     throw error;
   }

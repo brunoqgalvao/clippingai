@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Building2,
@@ -10,22 +10,54 @@ import {
   ArrowRight,
   Clock,
   Edit3,
-  AlertCircle
+  AlertCircle,
+  Bell,
+  ChevronDown,
+  X,
+  Plus
 } from 'lucide-react';
 import Logo, { LogoSymbol } from '../components/Logo';
 import type { CompanyDetectionResult } from '@clippingai/shared';
 import { detectCompany, processManualCompany, generateReport, signup, type GeneratedReport } from '../lib/api';
 import '../styles/onboarding.css';
 
-type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'suggestions' | 'generating' | 'viewing' | 'questions' | 'signup' | 'complete';
+type OnboardingStep = 'detecting' | 'verify' | 'manual' | 'focus' | 'context' | 'generating' | 'signup' | 'complete';
 
-interface ReportSuggestion {
-  type: 'media_monitoring';
+type IntelligenceType = 'competitors' | 'market_trends' | 'brand_mentions' | 'industry_news';
+
+interface IntelligenceOption {
+  type: IntelligenceType;
+  icon: React.ReactNode;
   title: string;
   description: string;
-  icon: React.ReactNode;
-  selected: boolean;
 }
+
+const INTELLIGENCE_OPTIONS: IntelligenceOption[] = [
+  {
+    type: 'competitors',
+    icon: <Target size={32} />,
+    title: 'Competitor Intelligence',
+    description: 'Track product launches, pricing changes, and strategic moves from your rivals'
+  },
+  {
+    type: 'market_trends',
+    icon: <TrendingUp size={32} />,
+    title: 'Market Trends',
+    description: 'Stay ahead of industry shifts, regulatory changes, and emerging technologies'
+  },
+  {
+    type: 'brand_mentions',
+    icon: <Newspaper size={32} />,
+    title: 'Brand Mentions',
+    description: 'Monitor every mention of your company across news and social media'
+  },
+  {
+    type: 'industry_news',
+    icon: <Bell size={32} />,
+    title: 'Industry News',
+    description: 'General industry news and analysis relevant to your space'
+  }
+];
 
 export default function Onboarding() {
   const [searchParams] = useSearchParams();
@@ -41,15 +73,49 @@ export default function Onboarding() {
   const [companyInfo, setCompanyInfo] = useState<CompanyDetectionResult | null>(stateData?.companyInfo || null);
   const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
-  const [suggestions, setSuggestions] = useState<ReportSuggestion[]>([]);
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
   const [reportId, setReportId] = useState<string | null>(null);
-  const [reportData, setReportData] = useState<GeneratedReport | null>(null);
+  const [, setReportData] = useState<GeneratedReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [generationProgress, setGenerationProgress] = useState(0);
+  const [, setGenerationProgress] = useState(0);
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
+
+  // New state for improved onboarding flow
+  const [selectedIntelligenceTypes, setSelectedIntelligenceTypes] = useState<IntelligenceType[]>(['competitors', 'market_trends']);
+  const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]); // Detected competitors user has selected
+  const [customCompetitors, setCustomCompetitors] = useState<string[]>([]); // User-added custom competitors
+  const [competitorInput, setCompetitorInput] = useState('');
+  const [showLogoOptions, setShowLogoOptions] = useState(false);
+
+  // Initialize selected competitors from detected ones when companyInfo changes
+  useEffect(() => {
+    if (companyInfo?.competitors && companyInfo.competitors.length > 0) {
+      // Pre-select all detected competitors by default
+      setSelectedCompetitors(companyInfo.competitors);
+    }
+  }, [companyInfo?.competitors]);
+
+  // Memoized logo options - include main logo as first selectable option
+  const allLogoOptions = useMemo(() => {
+    if (!companyInfo) return [];
+    const logos: { url: string; isPrimary: boolean }[] = [];
+
+    // Add main logo as primary option
+    if (companyInfo.logo) {
+      logos.push({ url: companyInfo.logo, isPrimary: true });
+    }
+
+    // Add alternatives (filter out duplicates of main logo)
+    companyInfo.logoOptions?.forEach((opt: { url: string }) => {
+      if (opt.url !== companyInfo.logo) {
+        logos.push({ url: opt.url, isPrimary: false });
+      }
+    });
+
+    return logos;
+  }, [companyInfo]);
 
   // Real company detection using API
   useEffect(() => {
@@ -78,97 +144,53 @@ export default function Onboarding() {
     }
   }, [step, email, companyInfo]);
 
-  // Generate report suggestions
-  useEffect(() => {
-    if (step === 'suggestions' && companyInfo) {
-      setTimeout(() => {
-        setSuggestions([
-          {
-            type: 'competitor_landscape',
-            title: 'Competitor Intelligence',
-            description: `Track your top competitors in the ${companyInfo.industry} space. Get weekly updates on their product launches, pricing, and strategic moves.`,
-            icon: <Target size={32} />,
-            selected: true
-          },
-          {
-            type: 'market_landscape',
-            title: 'Market Trends',
-            description: `Stay ahead of ${companyInfo.industry} industry trends, regulatory changes, and emerging technologies that impact your business.`,
-            icon: <TrendingUp size={32} />,
-            selected: true
-          },
-          {
-            type: 'media_monitoring',
-            title: 'Media Monitoring',
-            description: `Track every mention of ${companyInfo.name} across news, social media, and industry publications. Never miss your moment.`,
-            icon: <Newspaper size={32} />,
-            selected: false
-          }
-        ]);
-      }, 800);
-    }
-  }, [step, companyInfo]);
-
-  const handleToggleSuggestion = (index: number) => {
-    setSuggestions(prev => prev.map((s, i) =>
-      i === index ? { ...s, selected: !s.selected } : s
-    ));
+  // Toggle intelligence type selection
+  const handleToggleIntelligence = (type: IntelligenceType) => {
+    setSelectedIntelligenceTypes(prev =>
+      prev.includes(type)
+        ? prev.filter(t => t !== type)
+        : [...prev, type]
+    );
   };
 
-  const handleContinue = async () => {
-    if (step === 'suggestions' && companyInfo) {
-      // Go straight to generating the report
-      setStep('generating');
-      setError(null);
-      setGenerationProgress(0);
+  // Toggle detected competitor selection
+  const handleToggleDetectedCompetitor = (competitor: string) => {
+    setSelectedCompetitors(prev =>
+      prev.includes(competitor)
+        ? prev.filter(c => c !== competitor)
+        : [...prev, competitor]
+    );
+  };
 
-      try {
-        // Get selected report type (first selected suggestion)
-        const selectedSuggestion = suggestions.find(s => s.selected);
-        if (!selectedSuggestion) {
-          throw new Error('Please select at least one report type');
-        }
+  // Add custom competitor chip
+  const handleAddCompetitor = () => {
+    const trimmed = competitorInput.trim();
+    if (trimmed && !customCompetitors.includes(trimmed) && !selectedCompetitors.includes(trimmed)) {
+      setCustomCompetitors(prev => [...prev, trimmed]);
+      setCompetitorInput('');
+    }
+  };
 
-        // Simulate progress
-        const progressInterval = setInterval(() => {
-          setGenerationProgress(prev => Math.min(prev + 5, 95));
-        }, 1000);
+  // Remove custom competitor chip
+  const handleRemoveCompetitor = (competitor: string) => {
+    setCustomCompetitors(prev => prev.filter(c => c !== competitor));
+  };
 
-        // Actually generate the report
-        const report = await generateReport({
-          companyName: companyInfo.name,
-          companyDomain: companyInfo.domain,
-          industry: companyInfo.industry,
-          competitors: companyInfo.competitors,
-          reportType: selectedSuggestion.type,
-          dateRange: 7
-        });
+  // Remove detected competitor chip
+  const handleRemoveDetectedCompetitor = (competitor: string) => {
+    if (companyInfo) {
+      setCompanyInfo({
+        ...companyInfo,
+        competitors: companyInfo.competitors?.filter((c: string) => c !== competitor) || []
+      });
+    }
+  };
 
-        clearInterval(progressInterval);
-        setGenerationProgress(100);
-        setReportData(report);
-        setReportId('generated-' + Date.now());
-
-        // Navigate to report page with data
-        setTimeout(() => {
-          navigate(`/report?email=${encodeURIComponent(email)}`, {
-            state: {
-              reportData: report,
-              companyInfo
-            }
-          });
-        }, 500);
-      } catch (err) {
-        console.error('Report generation error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to generate report. Please try again.');
-        setStep('suggestions');
-      }
-    } else if (step === 'viewing') {
-      // After seeing the report, ask questions
-      setStep('questions');
-    } else if (step === 'questions') {
-      // After questions, create account
-      setStep('signup');
+  // Handle keyboard input for competitor
+  const handleCompetitorKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddCompetitor();
     }
   };
 
@@ -190,7 +212,33 @@ export default function Onboarding() {
         companyDomain: companyInfo?.domain,
       });
 
-      // Account created successfully
+      // Create intelligence stream for the user with their preferences
+      const { createReportConfig } = await import('../lib/api');
+
+      // Combine selected detected competitors and user-added custom competitors
+      const allCompetitors = [
+        ...selectedCompetitors,
+        ...customCompetitors
+      ].filter((c: string, i, arr) => arr.indexOf(c) === i); // dedupe
+
+      await createReportConfig({
+        title: `${companyInfo?.name || 'Your Company'} ${frequency === 'daily' ? 'Daily' : 'Weekly'} Intelligence`,
+        description: `Automated ${frequency} competitive intelligence reports for ${companyInfo?.name || 'your company'}`,
+        reportType: 'media_monitoring',
+        frequency: frequency, // FIX: use actual frequency state
+        scheduleTime: '09:00',
+        scheduleDay: frequency === 'weekly' ? 'monday' : undefined,
+        searchParameters: {
+          companyName: companyInfo?.name,
+          companyDomain: companyInfo?.domain,
+          industry: companyInfo?.industry,
+          competitors: allCompetitors, // FIX: include user's competitors
+          dateRange: '7d',
+        },
+        recipients: [email],
+      });
+
+      // Account created successfully with stream
       setStep('complete');
     } catch (err) {
       console.error('Signup error:', err);
@@ -200,8 +248,24 @@ export default function Onboarding() {
     }
   };
 
-  const handleVerifyCompany = async () => {
-    // Go straight to generating the report
+  // Step 2: Verify company -> Step 3: Focus
+  const handleVerifyCompany = () => {
+    setError(null);
+    setStep('focus');
+  };
+
+  // Step 3: Focus -> Step 4: Context
+  const handleFocusContinue = () => {
+    if (selectedIntelligenceTypes.length === 0) {
+      setError('Please select at least one intelligence type');
+      return;
+    }
+    setError(null);
+    setStep('context');
+  };
+
+  // Step 4: Context -> Step 5: Generate
+  const handleContextContinue = async () => {
     setStep('generating');
     setError(null);
     setGenerationProgress(0);
@@ -212,12 +276,18 @@ export default function Onboarding() {
         setGenerationProgress(prev => Math.min(prev + 5, 95));
       }, 1000);
 
-      // Generate media monitoring report
+      // Combine selected detected competitors and user-added custom competitors
+      const allCompetitors = [
+        ...selectedCompetitors,
+        ...customCompetitors
+      ].filter((c: string, i, arr) => arr.indexOf(c) === i);
+
+      // Generate report with all context
       const report = await generateReport({
         companyName: companyInfo!.name,
         companyDomain: companyInfo!.domain,
         industry: companyInfo!.industry,
-        competitors: companyInfo!.competitors,
+        competitors: allCompetitors,
         reportType: 'media_monitoring',
         dateRange: 7
       });
@@ -225,21 +295,20 @@ export default function Onboarding() {
       clearInterval(progressInterval);
       setGenerationProgress(100);
       setReportData(report);
-      setReportId('generated-' + Date.now());
 
-      // Navigate to report page with data
-      setTimeout(() => {
-        navigate(`/report?email=${encodeURIComponent(email)}`, {
-          state: {
-            reportData: report,
-            companyInfo
-          }
-        });
-      }, 500);
+      // Navigate to report page
+      if (report.reportId) {
+        setReportId(report.reportId);
+        setTimeout(() => {
+          navigate(`/report/${report.reportId}?email=${encodeURIComponent(email)}`);
+        }, 500);
+      } else {
+        throw new Error('Report was generated but not saved');
+      }
     } catch (err) {
       console.error('Report generation error:', err);
       setError(err instanceof Error ? err.message : 'Failed to generate report. Please try again.');
-      setStep('verify');
+      setStep('context');
     }
   };
 
@@ -254,45 +323,12 @@ export default function Onboarding() {
       const result = await processManualCompany(manualInput);
       setCompanyInfo(result);
       setSelectedLogo(result.logo || null);
-
-      // Go straight to generating the report
-      setStep('generating');
       setError(null);
-      setGenerationProgress(0);
-
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setGenerationProgress(prev => Math.min(prev + 5, 95));
-      }, 1000);
-
-      // Generate media monitoring report
-      const report = await generateReport({
-        companyName: result.name,
-        companyDomain: result.domain,
-        industry: result.industry,
-        competitors: result.competitors,
-        reportType: 'media_monitoring',
-        dateRange: 7
-      });
-
-      clearInterval(progressInterval);
-      setGenerationProgress(100);
-      setReportData(report);
-      setReportId('generated-' + Date.now());
-
-      // Navigate to report page with data
-      setTimeout(() => {
-        navigate(`/report?email=${encodeURIComponent(email)}`, {
-          state: {
-            reportData: report,
-            companyInfo: result
-          }
-        });
-      }, 500);
+      // Go to focus step after manual company input
+      setStep('focus');
     } catch (err) {
       console.error('Manual input error:', err);
       setError('Failed to process company information. Please try again.');
-      setStep('manual');
     }
   };
 
@@ -309,7 +345,7 @@ export default function Onboarding() {
       {/* Header */}
       <header className="onboarding-header">
         <a href="/" className="logo">
-          <Logo size={50} showWordmark={true} variant="light" />
+          <Logo size={50} showWordmark={true} variant="dark" />
         </a>
       </header>
 
@@ -394,21 +430,35 @@ export default function Onboarding() {
                   )}
                 </div>
 
-                {/* Logo Options */}
-                {companyInfo.logoOptions && companyInfo.logoOptions.length > 0 && (
+                {/* Logo Options - Fixed: main logo is now selectable */}
+                {allLogoOptions.length > 1 && (
                   <div className="logo-options">
-                    <p className="options-label">Or choose a different logo:</p>
-                    <div className="logo-grid">
-                      {companyInfo.logoOptions.map((option, index) => (
-                        <div
-                          key={index}
-                          className={`logo-option ${selectedLogo === option.url ? 'selected' : ''}`}
-                          onClick={() => setSelectedLogo(option.url)}
-                        >
-                          <img src={option.url} alt={`${companyInfo.name} logo option`} onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }} />
-                        </div>
-                      ))}
-                    </div>
+                    <button
+                      className="toggle-logo-options"
+                      onClick={() => setShowLogoOptions(!showLogoOptions)}
+                    >
+                      {showLogoOptions ? 'Hide logo options' : 'Choose a different logo'}
+                      <ChevronDown size={16} className={showLogoOptions ? 'rotated' : ''} />
+                    </button>
+
+                    {showLogoOptions && (
+                      <div className="logo-grid">
+                        {allLogoOptions.map((option, index) => (
+                          <div
+                            key={index}
+                            className={`logo-option ${selectedLogo === option.url ? 'selected' : ''} ${option.isPrimary ? 'primary' : ''}`}
+                            onClick={() => setSelectedLogo(option.url)}
+                          >
+                            <img
+                              src={option.url}
+                              alt={`${companyInfo.name} logo option`}
+                              onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }}
+                            />
+                            {option.isPrimary && <span className="primary-badge">Detected</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -466,46 +516,45 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* Step 3: Report Suggestions */}
-        {step === 'suggestions' && companyInfo && (
-          <div className="onboarding-step suggestions-step">
+        {/* Step 3: Intelligence Focus (NEW) */}
+        {step === 'focus' && companyInfo && (
+          <div className="onboarding-step focus-step">
             <div className="step-content">
-              <div className="company-detected">
-                <div className="company-badge">
-                  <Check size={20} />
-                  <span>Company Detected</span>
+              {error && (
+                <div className="error-banner">
+                  <AlertCircle size={20} />
+                  <span>{error}</span>
                 </div>
-                <h1 className="company-name">{companyInfo.name}</h1>
-                <p className="company-meta">
-                  {companyInfo.domain} • {companyInfo.industry}
-                </p>
+              )}
+
+              <div className="company-context">
+                <span className="company-badge">
+                  <Check size={16} />
+                  {companyInfo.name}
+                </span>
               </div>
 
-              <div className="suggestions-header">
-                <h2 className="section-title">
-                  We've prepared these intelligence reports for you
-                </h2>
-                <p className="section-subtitle">
-                  Select the reports you want to receive. We recommend starting with 2-3.
-                </p>
-              </div>
+              <h2 className="section-title">What intelligence do you need?</h2>
+              <p className="section-subtitle">
+                Select all that apply. We'll customize your first report based on your choices.
+              </p>
 
-              <div className="suggestions-grid">
-                {suggestions.map((suggestion, index) => (
+              <div className="intelligence-grid">
+                {INTELLIGENCE_OPTIONS.map((option, index) => (
                   <div
-                    key={index}
-                    className={`suggestion-card ${suggestion.selected ? 'selected' : ''}`}
-                    onClick={() => handleToggleSuggestion(index)}
+                    key={option.type}
+                    className={`intelligence-card ${selectedIntelligenceTypes.includes(option.type) ? 'selected' : ''}`}
+                    onClick={() => handleToggleIntelligence(option.type)}
                     style={{ animationDelay: `${index * 0.1}s` }}
                   >
                     <div className="card-header">
-                      <div className="card-icon">{suggestion.icon}</div>
+                      <div className="card-icon">{option.icon}</div>
                       <div className="card-checkbox">
-                        {suggestion.selected && <Check size={18} />}
+                        {selectedIntelligenceTypes.includes(option.type) && <Check size={18} />}
                       </div>
                     </div>
-                    <h3 className="card-title">{suggestion.title}</h3>
-                    <p className="card-description">{suggestion.description}</p>
+                    <h3 className="card-title">{option.title}</h3>
+                    <p className="card-description">{option.description}</p>
                   </div>
                 ))}
               </div>
@@ -513,10 +562,10 @@ export default function Onboarding() {
               <div className="step-actions">
                 <button
                   className="btn-primary-large"
-                  onClick={handleContinue}
-                  disabled={!suggestions.some(s => s.selected)}
+                  onClick={handleFocusContinue}
+                  disabled={selectedIntelligenceTypes.length === 0}
                 >
-                  Continue with {suggestions.filter(s => s.selected).length} report{suggestions.filter(s => s.selected).length !== 1 ? 's' : ''}
+                  Continue with {selectedIntelligenceTypes.length} selected
                   <ArrowRight size={20} />
                 </button>
               </div>
@@ -524,20 +573,119 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* Step 3: Quick Questions */}
-        {step === 'questions' && (
-          <div className="onboarding-step questions-step">
+        {/* Step 4: Context Collection (NEW) */}
+        {step === 'context' && companyInfo && (
+          <div className="onboarding-step context-step">
             <div className="step-content">
-              <h2 className="section-title">Just a few quick questions</h2>
+              <div className="company-context">
+                <span className="company-badge">
+                  <Check size={16} />
+                  {companyInfo.name}
+                </span>
+              </div>
+
+              <h2 className="section-title">Let's personalize your first report</h2>
               <p className="section-subtitle">
-                This helps us tailor your reports perfectly
+                Help us understand your needs better
               </p>
 
-              <div className="questions-form">
-                <div className="form-section">
+              <div className="context-form">
+                {/* Competitor Section - show if competitors selected */}
+                {selectedIntelligenceTypes.includes('competitors') && (
+                  <div className="context-section">
+                    <label className="form-label">
+                      <Target size={20} />
+                      Who are your main competitors?
+                    </label>
+                    <p className="section-hint">
+                      Click to select competitors to track. You can also add your own.
+                    </p>
+
+                    {/* Clickable detected competitor suggestions */}
+                    {companyInfo.competitors && companyInfo.competitors.length > 0 && (
+                      <div className="competitor-suggestions">
+                        <span className="chips-label">Suggestions based on your industry:</span>
+                        <div className="competitor-chips">
+                          {companyInfo.competitors.map((comp: string, i: number) => (
+                            <div key={i} className="competitor-chip-wrapper">
+                              <button
+                                type="button"
+                                className={`competitor-chip suggestion ${selectedCompetitors.includes(comp) ? 'selected' : ''}`}
+                                onClick={() => handleToggleDetectedCompetitor(comp)}
+                              >
+                                {selectedCompetitors.includes(comp) && <Check size={14} />}
+                                {comp}
+                              </button>
+                              <button
+                                type="button"
+                                className="remove-suggestion"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveDetectedCompetitor(comp);
+                                }}
+                                title="Remove suggestion"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* User-added custom competitors */}
+                    {customCompetitors.length > 0 && (
+                      <div className="custom-competitors">
+                        <span className="chips-label">Your additions:</span>
+                        <div className="competitor-chips">
+                          {customCompetitors.map((comp, i) => (
+                            <span key={i} className="competitor-chip custom">
+                              {comp}
+                              <button
+                                type="button"
+                                className="remove-chip"
+                                onClick={() => handleRemoveCompetitor(comp)}
+                              >
+                                <X size={14} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add custom competitor input */}
+                    <div className="add-competitor">
+                      <input
+                        type="text"
+                        placeholder="Add another competitor..."
+                        className="text-input"
+                        value={competitorInput}
+                        onChange={(e) => setCompetitorInput(e.target.value)}
+                        onKeyDown={handleCompetitorKeyDown}
+                      />
+                      <button
+                        type="button"
+                        className="add-btn"
+                        onClick={handleAddCompetitor}
+                        disabled={!competitorInput.trim()}
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
+
+                    {/* Selected count */}
+                    <p className="selected-count">
+                      {selectedCompetitors.length + customCompetitors.length} competitor{selectedCompetitors.length + customCompetitors.length !== 1 ? 's' : ''} selected
+                    </p>
+                  </div>
+                )}
+
+                {/* Frequency Section - always show */}
+                <div className="context-section">
                   <label className="form-label">
                     <Clock size={20} />
-                    How often do you want to receive reports?
+                    How often do you want reports?
                   </label>
                   <div className="frequency-options">
                     <button
@@ -556,30 +704,18 @@ export default function Onboarding() {
                     </button>
                   </div>
                 </div>
-
-                <div className="form-section">
-                  <label className="form-label">
-                    <Target size={20} />
-                    Who are your top competitors? (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g., Competitor X, Competitor Y, Competitor Z"
-                    className="text-input"
-                  />
-                  <p className="input-hint">
-                    We've already detected some competitors, but you can add more
-                  </p>
-                </div>
               </div>
 
               <div className="step-actions">
                 <button
                   className="btn-primary-large"
-                  onClick={handleContinue}
+                  onClick={handleContextContinue}
                 >
-                  Continue to Account Setup
+                  Generate My First Report
                   <ArrowRight size={20} />
+                </button>
+                <button className="btn-text" onClick={() => setStep('focus')}>
+                  Go back
                 </button>
               </div>
             </div>
@@ -593,7 +729,7 @@ export default function Onboarding() {
               <div className="generating-animation">
                 <div className="report-icon-wrapper">
                   <div className="rotating-border"></div>
-                  <LogoSymbol size={64} variant="light" className="sparkles-icon" />
+                  <LogoSymbol size={64} variant="dark" className="sparkles-icon" />
                 </div>
               </div>
 
@@ -627,75 +763,7 @@ export default function Onboarding() {
           </div>
         )}
 
-        {/* Step 5: Viewing Report */}
-        {step === 'viewing' && reportId && (
-          <div className="onboarding-step viewing-step">
-            <div className="step-content">
-              <h2 className="section-title">
-                Here's your first intelligence report!
-              </h2>
-              <p className="section-subtitle">
-                This is what you'll receive automatically based on your preferences
-              </p>
-
-              <div className="report-preview-card large">
-                <div className="preview-header">
-                  <h3>Competitor Intelligence - Week of Nov 11</h3>
-                  <span className="preview-badge">Just generated</span>
-                </div>
-                <p className="preview-summary">
-                  <strong>TL;DR:</strong> 5 major updates detected across your competitors.
-                  Market shifting toward AI-native solutions with 3 new product launches this week.
-                </p>
-
-                <div className="preview-articles">
-                  <div className="preview-article">
-                    <div className="article-img-placeholder"></div>
-                    <h4>Competitor X Launches AI-Powered Platform</h4>
-                    <p>Major product announcement with new AI capabilities targeting enterprise customers...</p>
-                  </div>
-                  <div className="preview-article">
-                    <div className="article-img-placeholder"></div>
-                    <h4>Competitor Y Raises $50M Series B</h4>
-                    <p>Significant funding round to accelerate product development and market expansion...</p>
-                  </div>
-                  <div className="preview-article">
-                    <div className="article-img-placeholder"></div>
-                    <h4>Industry Shifts Toward AI-Native Solutions</h4>
-                    <p>Market analysis shows 73% increase in AI feature adoption across the sector...</p>
-                  </div>
-                </div>
-
-                <div className="preview-stats">
-                  <div className="stat">
-                    <span className="stat-value">5</span>
-                    <span className="stat-label">Articles</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-value">12</span>
-                    <span className="stat-label">Sources</span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-value">7</span>
-                    <span className="stat-label">Days</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="step-actions">
-                <button
-                  className="btn-primary-large"
-                  onClick={handleContinue}
-                >
-                  I love it! Set up delivery
-                  <ArrowRight size={20} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 6: Signup */}
+        {/* Step 5: Signup */}
         {step === 'signup' && (
           <div className="onboarding-step signup-step">
             <div className="step-content">

@@ -1,20 +1,49 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Target, TrendingUp, Mail } from 'lucide-react';
 import Logo, { LogoSymbol } from '../components/Logo';
+import { checkEmailExists } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import '../styles/landing.css';
 
 export default function Landing() {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [email, setEmail] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
 
-  const handleEmailSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email) {
-      setIsAnalyzing(true);
-      // Navigate to onboarding after brief animation
+    if (!email) return;
+
+    setIsAnalyzing(true);
+    setStatusMessage('Checking...');
+
+    try {
+      // Check if email already exists
+      const result = await checkEmailExists(email);
+
+      if (result.exists) {
+        // Email exists - redirect to login
+        setStatusMessage('Welcome back! Taking you to login...');
+        setTimeout(() => {
+          navigate(`/login?email=${encodeURIComponent(email)}`);
+        }, 1000);
+      } else {
+        // New user - continue to onboarding
+        setStatusMessage('Analyzing...');
+        setTimeout(() => {
+          navigate(`/onboarding?email=${encodeURIComponent(email)}`);
+        }, 1500);
+      }
+    } catch (error) {
+      console.error('Error checking email:', error);
+      // On error, default to onboarding flow
+      setStatusMessage('Analyzing...');
       setTimeout(() => {
-        window.location.href = '/onboarding?email=' + encodeURIComponent(email);
-      }, 2000);
+        navigate(`/onboarding?email=${encodeURIComponent(email)}`);
+      }, 1500);
     }
   };
 
@@ -23,12 +52,14 @@ export default function Landing() {
       {/* Header */}
       <header className="header">
         <a href="/" className="logo">
-          <Logo size={50} showWordmark={true} variant="light" />
+          <Logo size={50} showWordmark={true} variant="dark" />
         </a>
         <nav className="nav">
           <a href="#features">Features</a>
           <a href="#how-it-works">How it Works</a>
-          <a href="/login" className="btn-secondary">Sign In</a>
+          <a href={isAuthenticated ? "/dashboard" : "/login"} className="btn-secondary">
+            {isAuthenticated ? "Go to Dashboard" : "Sign In"}
+          </a>
         </nav>
       </header>
 
@@ -66,7 +97,7 @@ export default function Landing() {
                 {isAnalyzing ? (
                   <span className="analyzing">
                     <span className="spinner"></span>
-                    Analyzing...
+                    {statusMessage || 'Analyzing...'}
                   </span>
                 ) : (
                   <>
@@ -142,7 +173,7 @@ export default function Landing() {
 
           <div className="feature-card media">
             <div className="card-icon">
-              <LogoSymbol size={32} variant="light" />
+              <LogoSymbol size={32} variant="dark" />
             </div>
             <h3>Media Monitoring</h3>
             <p>
@@ -228,7 +259,7 @@ export default function Landing() {
       <footer className="footer">
         <div className="footer-content">
           <div className="footer-brand">
-            <Logo size={40} showWordmark={true} variant="light" />
+            <Logo size={40} showWordmark={true} variant="dark" />
           </div>
           <div className="footer-links">
             <a href="/privacy">Privacy</a>

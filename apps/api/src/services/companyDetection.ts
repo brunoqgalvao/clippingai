@@ -211,7 +211,7 @@ Page Content (first 5000 chars):
 ${pageContent}
 
 Extract:
-1. Company name
+1. Company name (EXTREMELY IMPORTANT: Return JUST the name. Do NOT include taglines, slogans, separators like " - ", or SEO keywords. Example: "Tesla", NOT "Tesla - Electric Cars")
 2. Brief description (1-2 sentences)
 3. Industry/sector
 4. Top 3 potential competitors (if you can infer from the content)
@@ -254,7 +254,7 @@ async function generateCompanyInfo(domain: string): Promise<Partial<CompanyInfo>
           content: `Based on the domain "${domain}", provide your best guess about this company. Return ONLY valid JSON.
 
 Infer:
-1. Company name (from domain)
+1. Company name (from domain, clean name only, no taglines)
 2. Likely industry/sector
 3. Brief description of what they might do
 4. Potential competitors in that space

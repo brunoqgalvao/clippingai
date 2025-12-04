@@ -74,7 +74,7 @@
 
 .btn-secondary:hover {
   border-color: var(--text-primary);
-  background: var(--overlay-light);
+  background: var(--gray-100);
 }
 
 /* Hero Section */
@@ -133,15 +133,17 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2);
-  background: var(--bg-secondary);
+  background: var(--white);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
   transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
 }
 
 .form-group:focus-within {
   border-color: var(--text-primary);
-  background: var(--bg-elevated);
+  background: var(--white);
+  box-shadow: var(--shadow-md);
 }
 
 .form-icon {
@@ -174,8 +176,8 @@
   font-family: var(--font-body);
   font-size: var(--text-base);
   font-weight: 600;
-  color: var(--black);
-  background: var(--white);
+  color: var(--white);
+  background: var(--black);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -184,12 +186,15 @@
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--gray-200);
+  background: var(--gray-800);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
   cursor: not-allowed;
+  transform: none;
 }
 
 .analyzing {
@@ -201,8 +206,8 @@
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(10, 10, 10, 0.2);
-  border-top-color: var(--black);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--white);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -238,11 +243,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-elevated);
-  border: 2px solid var(--bg-primary);
+  background: var(--white);
+  border: 2px solid var(--gray-200);
   border-radius: 50%;
   margin-left: -12px;
   font-size: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
 .avatar:first-child {
@@ -300,11 +306,14 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
-  transition: border-color var(--transition-base);
+  transition: all var(--transition-base);
 }
 
 .feature-card:hover {
   border-color: var(--border-emphasis);
+  background: var(--white);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px);
 }
 
 .card-icon {
@@ -313,10 +322,12 @@
   justify-content: center;
   width: 48px;
   height: 48px;
-  background: var(--bg-elevated);
+  background: var(--white);
   border-radius: var(--radius-md);
   margin-bottom: var(--space-5);
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
 }
 
 .feature-card h3 {
@@ -353,7 +364,7 @@
   content: '✓';
   position: absolute;
   left: 0;
-  color: var(--text-primary);
+  color: var(--accent-primary);
   font-weight: 600;
 }
 
@@ -387,11 +398,12 @@
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-secondary);
+  color: var(--text-primary);
+  background: var(--white);
   border: 1px solid var(--border-medium);
   border-radius: 50%;
   margin: 0 auto var(--space-6);
+  box-shadow: var(--shadow-sm);
 }
 
 .step h3 {
@@ -455,16 +467,18 @@
   font-family: var(--font-body);
   font-size: var(--text-base);
   color: var(--text-primary);
-  background: var(--bg-secondary);
+  background: var(--white);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-lg);
   outline: none;
   transition: all var(--transition-base);
+  box-shadow: var(--shadow-sm);
 }
 
 .cta-input:focus {
   border-color: var(--text-primary);
-  background: var(--bg-elevated);
+  background: var(--white);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary-large {
@@ -475,8 +489,8 @@
   font-family: var(--font-body);
   font-size: var(--text-base);
   font-weight: 600;
-  color: var(--black);
-  background: var(--white);
+  color: var(--white);
+  background: var(--black);
   border: none;
   border-radius: var(--radius-lg);
   cursor: pointer;
@@ -485,7 +499,9 @@
 }
 
 .btn-primary-large:hover {
-  background: var(--gray-200);
+  background: var(--gray-800);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
 }
 
 /* Footer */

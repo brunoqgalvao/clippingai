@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { prisma } from '@clippingai/database';
+import rateLimit from 'express-rate-limit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,13 +28,27 @@ if (result.error) {
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
+// Rate Limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow images to be loaded from other origins (frontend)
+}));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
 }));
+app.use(limiter);
 app.use(express.json());
+
+// Serve uploaded images
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -43,6 +58,7 @@ app.get('/health', (req, res) => {
 // Import routes
 import onboardingRoutes from './routes/onboarding.js';
 import reportsRoutes from './routes/reports.js';
+import reportConfigsRoutes from './routes/reportConfigs.js';
 import authRoutes from './routes/auth.js';
 import jobsRoutes from './routes/jobs.js';
 
@@ -55,6 +71,7 @@ app.get('/api', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/report-configs', reportConfigsRoutes);
 app.use('/api/jobs', jobsRoutes);
 
 // Error handling

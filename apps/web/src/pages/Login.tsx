@@ -12,6 +12,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fromLanding = searchParams.get('email'); // User came from landing page
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,11 +20,11 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const result = await login({ email, password });
+      await login({ email, password });
 
       // Token is automatically stored by the login function
-      // Navigate to report page
-      navigate('/report');
+      // Navigate to dashboard
+      navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
       setError(err instanceof Error ? err.message : 'Invalid email or password');
@@ -37,13 +38,24 @@ export default function Login() {
       <div className="login-container">
         <div className="login-header">
           <a href="/" className="login-logo">
-            <Logo size={50} showWordmark={true} variant="light" />
+            <Logo size={50} showWordmark={true} variant="dark" />
           </a>
           <h1>Welcome back</h1>
-          <p>Sign in to your account to continue</p>
+          <p>
+            {fromLanding
+              ? 'We found your account! Sign in to continue.'
+              : 'Sign in to your account to continue'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
+          {fromLanding && !error && (
+            <div className="login-info">
+              <Mail size={20} />
+              <span>We recognized your email. Please enter your password.</span>
+            </div>
+          )}
+
           {error && (
             <div className="login-error">
               <AlertCircle size={20} />

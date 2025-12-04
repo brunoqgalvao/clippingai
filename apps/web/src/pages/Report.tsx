@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, ExternalLink, Share2, Mail, Copy, Check, X } from 'lucide-react';
-import { getReportById, getReportBySlug, updateReportVisibility, type StoredReport } from '../lib/api';
+import { ArrowLeft, Calendar, ExternalLink, Share2, Mail, Sparkles } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { type StoredReport, getAuthToken } from '../lib/api';
+import { useReportCache } from '../contexts/ReportCacheContext';
+import ShareModal from '../components/ShareModal';
+import AgentDebugPanel from '../components/AgentDebugPanel';
 import '../styles/report.css';
 
 interface Article {
@@ -18,6 +22,7 @@ interface Article {
 interface ReportData {
   summary: string;
   articles: Article[];
+  title?: string; // Add title property
   metadata?: {
     totalSearches: number;
     articlesFound: number;
@@ -27,71 +32,163 @@ interface ReportData {
 }
 
 interface ReportProps {
-  isPublic?: boolean;
+
 }
 
-export default function Report({ isPublic = false }: ReportProps) {
+// Helper to parse summary in case it contains raw JSON (from broken reports)
+function getReportTitleAndSummary(data: ReportData | null): { title: string; summary: string } {
+  if (!data) return { title: 'Executive Summary', summary: '' };
+
+  // If title exists, use it
+  if (data.title) {
+    return { title: data.title, summary: data.summary || '' };
+  }
+
+  // Check if summary is JSON (broken report)
+  const summaryText = data.summary || '';
+  if (summaryText.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(summaryText);
+      return {
+        title: parsed.title || 'Weekly Intelligence Report',
+        summary: parsed.summary || summaryText
+      };
+    } catch {
+      // Not valid JSON, use as-is
+    }
+  }
+
+  return { title: 'Weekly Intelligence Report', summary: summaryText };
+}
+
+export default function Report({ }: ReportProps) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams<{ id?: string; slug?: string }>();
+  const { getReport, getCachedOrFetchReport, getCachedOrFetchReportBySlug, cacheReport } = useReportCache();
 
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [storedReport, setStoredReport] = useState<StoredReport | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Check cache first to determine initial loading state
+  const cachedReport = params.id ? getReport(params.id) : params.slug ? getReport(params.slug) : null;
+  const [loading, setLoading] = useState(!cachedReport);
   const [error, setError] = useState<string | null>(null);
-  const [expandedArticle, setExpandedArticle] = useState<string | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [emails, setEmails] = useState<string[]>([]);
-  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Hidden debug panel shortcut: Cmd/Ctrl + Shift + D
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        setShowDebugPanel(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Get data from navigation state or URL params
-  const stateData = location.state as { reportData?: ReportData; companyInfo?: any } | null;
-  const companyName =
+  const stateData = location.state as { reportData?: ReportData; storedReport?: StoredReport; companyInfo?: any } | null;
+  
+  const rawCompanyName =
     storedReport?.user?.companyName ||
     stateData?.companyInfo?.name ||
     searchParams.get('company') ||
     'Your Company';
+
+  // Helper to clean and truncate company name
+  const cleanCompanyName = (name: string) => {
+    let cleaned = name;
+    // Remove separators and taglines if present
+    if (cleaned.includes(' — ')) cleaned = cleaned.split(' — ')[0];
+    else if (cleaned.includes(' - ')) cleaned = cleaned.split(' - ')[0];
+    else if (cleaned.includes(' | ')) cleaned = cleaned.split(' | ')[0];
+
+    // Truncate if still too long
+    if (cleaned.length > 30) {
+      return cleaned.substring(0, 30) + '...';
+    }
+    return cleaned;
+  };
+
+  const companyName = cleanCompanyName(rawCompanyName);
   const reportType = searchParams.get('type') || 'competitor_landscape';
+
+  // Detect if user is coming from onboarding (has email param, no auth token)
+  const emailFromOnboarding = searchParams.get('email');
+  const isFromOnboarding = !!emailFromOnboarding && !getAuthToken();
+
+  const getImageUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http')) return url;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    return `${apiUrl}${url}`;
+  };
 
   useEffect(() => {
     async function loadReport() {
       try {
-        // Priority 1: Load from database if ID or slug is provided
-        if (params.id) {
-          console.log('Loading report by ID:', params.id);
-          const report = await getReportById(params.id);
-          setStoredReport(report);
-          setReportData(report.content);
-          setLoading(false);
-          setTimeout(() => setIsVisible(true), 100);
-          return;
-        }
-
-        if (params.slug) {
-          console.log('Loading public report by slug:', params.slug);
-          const report = await getReportBySlug(params.slug);
-          setStoredReport(report);
-          setReportData(report.content);
-          setLoading(false);
-          setTimeout(() => setIsVisible(true), 100);
-          return;
-        }
-
-        // Priority 2: Use data passed via navigation state
+        // Priority 1: Use data passed via navigation state (instant, no loading)
         if (stateData?.reportData) {
           setReportData(stateData.reportData);
+          if (stateData.storedReport) {
+            setStoredReport(stateData.storedReport);
+            cacheReport(stateData.storedReport); // Cache it for future use
+          }
           setLoading(false);
           setTimeout(() => setIsVisible(true), 100);
           return;
         }
 
-        // Priority 3: No data available - redirect to onboarding
+        // Priority 2: Check cache for ID
+        if (params.id) {
+          const cached = getReport(params.id);
+          if (cached) {
+            setStoredReport(cached);
+            setReportData(cached.content);
+            setLoading(false);
+            setTimeout(() => setIsVisible(true), 100);
+            return;
+          }
+
+          // Fetch if not cached
+          console.log('Loading report by ID:', params.id);
+          const report = await getCachedOrFetchReport(params.id);
+          setStoredReport(report);
+          setReportData(report.content);
+          setLoading(false);
+          setTimeout(() => setIsVisible(true), 100);
+          return;
+        }
+
+        // Priority 3: Check cache for slug
+        if (params.slug) {
+          const cached = getReport(params.slug);
+          if (cached) {
+            setStoredReport(cached);
+            setReportData(cached.content);
+            setLoading(false);
+            setTimeout(() => setIsVisible(true), 100);
+            return;
+          }
+
+          // Fetch if not cached
+          console.log('Loading public report by slug:', params.slug);
+          const report = await getCachedOrFetchReportBySlug(params.slug);
+          setStoredReport(report);
+          setReportData(report.content);
+          setLoading(false);
+          setTimeout(() => setIsVisible(true), 100);
+          return;
+        }
+
+        // Priority 4: No data available - redirect to onboarding
         console.log('No report data available, redirecting to onboarding');
         navigate('/onboarding');
       } catch (err) {
@@ -102,7 +199,7 @@ export default function Report({ isPublic = false }: ReportProps) {
     }
 
     loadReport();
-  }, [params.id, params.slug, stateData, navigate]);
+  }, [params.id, params.slug, stateData, navigate, getReport, getCachedOrFetchReport, getCachedOrFetchReportBySlug, cacheReport]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Recent';
@@ -124,15 +221,7 @@ export default function Report({ isPublic = false }: ReportProps) {
     });
   };
 
-  const handleShare = async () => {
-    // Check if report is already public
-    if (storedReport?.publicSlug) {
-      const url = `${window.location.origin}/r/${storedReport.publicSlug}`;
-      setShareUrl(url);
-      setShowShareModal(true);
-      return;
-    }
-
+  const handleShare = () => {
     // Check if we have a report ID (only saved reports can be shared)
     const reportId = storedReport?.id || (reportData as any)?.reportId;
     if (!reportId) {
@@ -140,29 +229,7 @@ export default function Report({ isPublic = false }: ReportProps) {
       return;
     }
 
-    setShareLoading(true);
-    try {
-      const result = await updateReportVisibility(reportId, true);
-      if (result.publicSlug) {
-        const url = `${window.location.origin}/r/${result.publicSlug}`;
-        setShareUrl(url);
-        setShowShareModal(true);
-
-        // Update stored report state
-        if (storedReport) {
-          setStoredReport({
-            ...storedReport,
-            isPublic: true,
-            publicSlug: result.publicSlug,
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Share error:', err);
-      alert('Failed to create shareable link. Please try again.');
-    } finally {
-      setShareLoading(false);
-    }
+    setShowShareModal(true);
   };
 
   const handleCopyLink = async () => {
@@ -295,10 +362,17 @@ export default function Report({ isPublic = false }: ReportProps) {
     <div className={`report-container ${isVisible ? 'visible' : ''}`}>
       {/* Header */}
       <header className="report-header">
-        <button className="back-button" onClick={() => navigate(-1)}>
-          <ArrowLeft size={20} />
-          <span>Back</span>
-        </button>
+        {isFromOnboarding ? (
+          <button className="back-button cta-style" onClick={handleContinue}>
+            <Sparkles size={20} />
+            <span>Save & Get Weekly Reports</span>
+          </button>
+        ) : (
+          <button className="back-button" onClick={() => navigate('/dashboard')}>
+            <ArrowLeft size={20} />
+            <span>Dashboard</span>
+          </button>
+        )}
         <div className="header-actions">
           <button
             className="action-button"
@@ -324,48 +398,27 @@ export default function Report({ isPublic = false }: ReportProps) {
           <span className="separator">•</span>
           <span className="report-date">
             <Calendar size={14} />
-            {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            {formatDate(storedReport?.createdAt)}
           </span>
         </div>
 
-        <h1 className="report-title">Executive Summary</h1>
+        {(() => {
+          const { title, summary } = getReportTitleAndSummary(reportData);
+          return (
+            <>
+              <h1 className="report-title">{title}</h1>
 
-        <div className="tldr-container">
-          <div className="tldr-label">TL;DR</div>
-          <div className="tldr-text">
-            {(() => {
-              const parts = reportData?.summary.split('\n\n') || [];
-              const bullets: string[] = [];
-              const paragraphs: string[] = [];
-
-              parts.forEach(part => {
-                if (part.includes('•')) {
-                  bullets.push(part);
-                } else if (part.trim()) {
-                  paragraphs.push(part);
-                }
-              });
-
-              return (
-                <>
-                  {bullets.length > 0 && (
-                    <ul className="tldr-bullets">
-                      {bullets.map((bullet, idx) => {
-                        const items = bullet.split('\n').filter(line => line.includes('•'));
-                        return items.map((item, itemIdx) => (
-                          <li key={`${idx}-${itemIdx}`}>{item.replace(/^[•\s]+/, '').trim()}</li>
-                        ));
-                      })}
-                    </ul>
-                  )}
-                  {paragraphs.map((paragraph, idx) => (
-                    <p key={`para-${idx}`} className="tldr-paragraph">{paragraph.trim()}</p>
-                  ))}
-                </>
-              );
-            })()}
-          </div>
-        </div>
+              <div className="tldr-container">
+                <div className="tldr-label">TL;DR</div>
+                <div className="tldr-text">
+                  <ReactMarkdown>
+                    {summary}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {reportData?.metadata && (
           <div className="report-stats">
@@ -396,13 +449,19 @@ export default function Report({ isPublic = false }: ReportProps) {
           {reportData?.articles.map((article, index) => (
             <article
               key={article.id}
-              className={`article-card ${expandedArticle === article.id ? 'expanded' : ''}`}
-              style={{ animationDelay: `${index * 0.1}s` }}
+              className="article-card"
+              style={{ animationDelay: `${index * 0.1}s`, cursor: 'pointer' }}
+              onClick={() => {
+                const slug = storedReport?.publicSlug || params.slug || params.id;
+                navigate(`/article/${slug}/${article.id}`, {
+                  state: { article, reportData, storedReport, companyName }
+                });
+              }}
             >
               <div className="article-image">
                 {article.imageUrl ? (
                   <img
-                    src={article.imageUrl}
+                    src={getImageUrl(article.imageUrl)}
                     alt={article.imageAlt || article.title}
                     loading="lazy"
                   />
@@ -413,9 +472,9 @@ export default function Report({ isPublic = false }: ReportProps) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: 'linear-gradient(135deg, rgba(0, 168, 232, 0.15) 0%, rgba(212, 175, 55, 0.15) 100%)',
+                    background: 'linear-gradient(135deg, var(--gray-100) 0%, var(--gray-200) 100%)',
                     fontSize: '3rem',
-                    color: 'rgba(0, 168, 232, 0.3)'
+                    color: 'var(--text-muted)'
                   }}>
                     📰
                   </div>
@@ -446,18 +505,6 @@ export default function Report({ isPublic = false }: ReportProps) {
                 <h3 className="article-title">{article.title}</h3>
 
                 <p className="article-summary">{article.summary}</p>
-
-                <button
-                  className="read-more-button"
-                  onClick={() => {
-                    const slug = storedReport?.publicSlug || params.slug || params.id;
-                    navigate(`/article/${slug}/${article.id}`, {
-                      state: { article, reportData, companyName }
-                    });
-                  }}
-                >
-                  Read Full Analysis
-                </button>
               </div>
             </article>
           ))}
@@ -478,114 +525,28 @@ export default function Report({ isPublic = false }: ReportProps) {
       </section>
 
       {/* Share Modal */}
-      {showShareModal && shareUrl && (
-        <div className="modal-overlay" onClick={closeShareModal}>
-          <div className="modal-content share-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Share Report</h3>
-              <button className="modal-close" onClick={closeShareModal}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <p className="share-description">
-                Anyone with this link can view this report. Share it with your team or on social media.
-              </p>
-
-              <div className="share-url-container">
-                <input
-                  type="text"
-                  className="share-url-input"
-                  value={shareUrl}
-                  readOnly
-                />
-                <button
-                  className="copy-button"
-                  onClick={handleCopyLink}
-                  disabled={copied}
-                >
-                  {copied ? (
-                    <>
-                      <Check size={18} />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={18} />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="share-stats">
-                {storedReport && (
-                  <div className="stat-item">
-                    <span className="stat-label">Views:</span>
-                    <span className="stat-value">{storedReport.viewCount}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="share-divider"></div>
-
-              <div className="email-share-section">
-                <h4 className="email-share-title">Send via Email</h4>
-
-                <div className="email-input-container">
-                  <input
-                    type="email"
-                    className="email-input"
-                    placeholder="Enter email address"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    onKeyPress={handleEmailKeyPress}
-                  />
-                  <button
-                    className="add-email-button"
-                    onClick={handleAddEmail}
-                    disabled={!emailInput.trim()}
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {emails.length > 0 && (
-                  <div className="email-tags">
-                    {emails.map((email) => (
-                      <div key={email} className="email-tag">
-                        <span>{email}</span>
-                        <button
-                          className="remove-email"
-                          onClick={() => handleRemoveEmail(email)}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <button
-                  className="send-email-button"
-                  onClick={handleSendEmails}
-                  disabled={emails.length === 0 || sendingEmail}
-                >
-                  <Mail size={18} />
-                  <span>{sendingEmail ? 'Sending...' : `Send to ${emails.length} recipient${emails.length !== 1 ? 's' : ''}`}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={closeShareModal}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {showShareModal && storedReport && (
+        <ShareModal
+          reportId={storedReport.id}
+          currentlyPublic={storedReport.isPublic}
+          currentSlug={storedReport.publicSlug}
+          companyName={companyName} // Pass company name here
+          onClose={() => setShowShareModal(false)}
+          onUpdate={(isPublic, publicSlug) => {
+            setStoredReport({
+              ...storedReport,
+              isPublic,
+              publicSlug,
+            });
+          }}
+        />
       )}
+
+      {/* Hidden Debug Panel - Cmd/Ctrl + Shift + D to toggle */}
+      <AgentDebugPanel
+        isOpen={showDebugPanel}
+        onClose={() => setShowDebugPanel(false)}
+      />
     </div>
   );
 }

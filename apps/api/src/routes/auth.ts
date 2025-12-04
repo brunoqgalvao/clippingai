@@ -4,6 +4,7 @@ import {
   signup,
   login,
   getUserById,
+  getUserByEmail,
   updateUserProfile,
   changePassword,
   verifyEmail,
@@ -45,6 +46,46 @@ const changePasswordSchema = z.object({
 // ============================================================================
 // PUBLIC ROUTES
 // ============================================================================
+
+/**
+ * POST /api/auth/check-email
+ * Check if email exists in the system
+ */
+router.post('/check-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Email is required',
+        },
+      });
+    }
+
+    const user = await getUserByEmail(email);
+
+    res.json({
+      success: true,
+      data: {
+        exists: !!user,
+        email: email.toLowerCase(),
+      },
+    });
+  } catch (error) {
+    console.error('Check email error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'CHECK_EMAIL_ERROR',
+        message: 'Failed to check email',
+      },
+    });
+  }
+});
 
 /**
  * POST /api/auth/signup

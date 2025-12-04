@@ -69,13 +69,21 @@ export async function signup(input: SignupInput): Promise<AuthResponse> {
   // Hash password
   const passwordHash = await hash(input.password, BCRYPT_ROUNDS);
 
+  // Sanitize company name
+  let cleanCompanyName = input.companyName;
+  if (cleanCompanyName && cleanCompanyName.length > 30) {
+    if (cleanCompanyName.includes(' — ')) cleanCompanyName = cleanCompanyName.split(' — ')[0];
+    else if (cleanCompanyName.includes(' - ')) cleanCompanyName = cleanCompanyName.split(' - ')[0];
+    else if (cleanCompanyName.includes(' | ')) cleanCompanyName = cleanCompanyName.split(' | ')[0];
+  }
+
   // Create user
   const user = await prisma.user.create({
     data: {
       email: input.email.toLowerCase(),
       passwordHash,
       name: input.name || null,
-      companyName: input.companyName || null,
+      companyName: cleanCompanyName || null,
       companyDomain: input.companyDomain || null,
       timezone: input.timezone || 'America/Los_Angeles',
       emailVerified: false,

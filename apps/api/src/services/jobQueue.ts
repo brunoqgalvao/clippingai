@@ -35,6 +35,7 @@ export interface ReportJobData {
   dateRange?: number;
   userId?: string;
   reportConfigId?: string;
+  generatedReportId?: string; // Pre-created report ID to update
   isPublic?: boolean;
 }
 
@@ -103,35 +104,74 @@ export function startWorker() {
 
         await job.updateProgress(90);
 
-        // Save to database
         const generationDurationMs = Date.now() - startTime;
-        const saved = await saveGeneratedReport({
-          userId: job.data.userId,
-          reportConfigId: job.data.reportConfigId,
-          companyName: job.data.companyName,
-          companyDomain: job.data.companyDomain,
-          reportType: job.data.reportType,
-          industry: job.data.industry,
-          competitors: job.data.competitors,
-          content: reportContent,
-          generationDurationMs,
-          isPublic: job.data.isPublic || false,
-        });
+
+        // If we have a pre-created report ID, update it; otherwise create new
+        let reportId: string;
+        let publicSlug: string | null = null;
+
+        if (job.data.generatedReportId) {
+          // Update the existing report with content
+          const updated = await prisma.generatedReport.update({
+            where: { id: job.data.generatedReportId },
+            data: {
+              status: 'completed',
+              content: reportContent,
+              generationCompletedAt: new Date(),
+              generationDurationMs,
+              isPublic: job.data.isPublic || false,
+            },
+          });
+          reportId = updated.id;
+          publicSlug = updated.publicSlug;
+          console.log(`✅ Updated existing report ${reportId}`);
+        } else {
+          // Legacy path: create new report
+          const saved = await saveGeneratedReport({
+            userId: job.data.userId,
+            reportConfigId: job.data.reportConfigId,
+            companyName: job.data.companyName,
+            companyDomain: job.data.companyDomain,
+            reportType: job.data.reportType,
+            industry: job.data.industry,
+            competitors: job.data.competitors,
+            content: reportContent,
+            generationDurationMs,
+            isPublic: job.data.isPublic || false,
+          });
+          reportId = saved.reportId;
+          publicSlug = saved.publicSlug;
+        }
 
         await job.updateProgress(100);
 
-        console.log(`✅ Job ${job.id} completed in ${generationDurationMs}ms - Report ID: ${saved.reportId}`);
+        console.log(`✅ Job ${job.id} completed in ${generationDurationMs}ms - Report ID: ${reportId}`);
 
         return {
-          reportId: saved.reportId,
-          publicSlug: saved.publicSlug,
+          reportId,
+          publicSlug,
           generationDurationMs,
         };
       } catch (error) {
         console.error(`❌ Job ${job.id} failed:`, error);
 
         // Update report status to failed if we have a report ID
-        if (job.data.reportConfigId) {
+        const reportIdToUpdate = job.data.generatedReportId;
+        if (reportIdToUpdate) {
+          try {
+            await prisma.generatedReport.update({
+              where: { id: reportIdToUpdate },
+              data: {
+                status: 'failed',
+                errorMessage: error instanceof Error ? error.message : 'Unknown error',
+                generationCompletedAt: new Date(),
+              },
+            });
+          } catch (dbError) {
+            console.error('Failed to update report status:', dbError);
+          }
+        } else if (job.data.reportConfigId) {
+          // Fallback: update any generating reports for this config
           try {
             await prisma.generatedReport.updateMany({
               where: {

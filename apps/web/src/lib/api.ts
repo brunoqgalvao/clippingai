@@ -107,12 +107,12 @@ export interface GeneratedReport {
 
 export interface StoredReport {
   id: string;
-  status: string;
+  status: 'generating' | 'completed' | 'failed';
   content: {
     summary: string;
     articles: ReportArticle[];
     metadata?: any;
-  };
+  } | null;
   isPublic: boolean;
   publicSlug: string | null;
   viewCount: number;
@@ -120,12 +120,13 @@ export interface StoredReport {
   generationCompletedAt: string | null;
   generationDurationMs: number | null;
   createdAt: string;
-  user?: {
+  errorMessage?: string | null;
+  user: {
     id: string;
     email: string;
     name: string | null;
     companyName: string | null;
-  } | null;
+  };
 }
 
 export async function generateReport(input: GenerateReportInput): Promise<GeneratedReport> {
@@ -254,6 +255,10 @@ export interface AuthResponse {
     companyDomain: string | null;
     subscriptionTier: string;
     emailVerified: boolean;
+    timezone: string;
+    subscriptionStatus: string;
+    createdAt: string;
+    updatedAt: string;
   };
   token: string;
 }
@@ -270,6 +275,24 @@ export interface User {
   subscriptionStatus: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export async function checkEmailExists(email: string): Promise<{ exists: boolean; email: string }> {
+  const response = await fetch(`${API_URL}/api/auth/check-email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  const result: ApiResponse<{ exists: boolean; email: string }> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to check email');
+  }
+
+  return result.data;
 }
 
 export async function signup(input: SignupInput): Promise<AuthResponse> {
@@ -453,4 +476,302 @@ export async function getQueueStats(): Promise<{
   }
 
   return result.data;
+}
+
+// ============================================================================
+// REPORT CONFIGS (Streams)
+// ============================================================================
+
+export interface ReportConfig {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  reportType: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
+  status: 'active' | 'paused' | 'deleted';
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  scheduleTime: string;
+  scheduleDay: string | null;
+  searchParameters: {
+    companyName?: string;
+    companyDomain?: string;
+    industry?: string;
+    competitors?: string[];
+    keywords?: string[];
+    dateRange?: string;
+  };
+  nextGenerationAt: string | null;
+  lastGenerationAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  recipients?: ReportRecipient[];
+  generatedReports?: StoredReport[];
+  _count?: {
+    generatedReports: number;
+  };
+}
+
+export interface ReportRecipient {
+  id: string;
+  reportConfigId: string;
+  email: string;
+  status: 'active' | 'unsubscribed';
+  createdAt: string;
+}
+
+export interface CreateReportConfigInput {
+  title: string;
+  description: string;
+  reportType: 'competitor_landscape' | 'market_landscape' | 'media_monitoring';
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  scheduleTime: string;
+  scheduleDay?: string;
+  searchParameters: {
+    companyName?: string;
+    companyDomain?: string;
+    industry?: string;
+    competitors?: string[];
+    keywords?: string[];
+    dateRange?: string;
+  };
+  recipients?: string[];
+}
+
+export async function createReportConfig(input: CreateReportConfigInput): Promise<ReportConfig> {
+  const response = await fetch(`${API_URL}/api/report-configs`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(input),
+  });
+
+  const result: ApiResponse<ReportConfig> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to create report config');
+  }
+
+  return result.data;
+}
+
+export async function getReportConfigs(): Promise<ReportConfig[]> {
+  const response = await fetch(`${API_URL}/api/report-configs`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<ReportConfig[]> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to get report configs');
+  }
+
+  return result.data;
+}
+
+export async function getReportConfig(id: string): Promise<ReportConfig> {
+  const response = await fetch(`${API_URL}/api/report-configs/${id}`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<ReportConfig> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to get report config');
+  }
+
+  return result.data;
+}
+
+export async function updateReportConfig(
+  id: string,
+  updates: Partial<CreateReportConfigInput>
+): Promise<ReportConfig> {
+  const response = await fetch(`${API_URL}/api/report-configs/${id}`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(updates),
+  });
+
+  const result: ApiResponse<ReportConfig> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to update report config');
+  }
+
+  return result.data;
+}
+
+export async function deleteReportConfig(id: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/report-configs/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<void> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error?.message || 'Failed to delete report config');
+  }
+}
+
+export async function addReportConfigRecipients(
+  id: string,
+  emails: string[]
+): Promise<ReportRecipient[]> {
+  const response = await fetch(`${API_URL}/api/report-configs/${id}/recipients`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ emails }),
+  });
+
+  const result: ApiResponse<ReportRecipient[]> = await response.json();
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error?.message || 'Failed to add recipients');
+  }
+
+  return result.data;
+}
+
+export async function removeReportConfigRecipient(
+  configId: string,
+  recipientId: string
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/report-configs/${configId}/recipients/${recipientId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<void> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error?.message || 'Failed to remove recipient');
+  }
+}
+
+export async function generateReportForConfig(configId: string): Promise<{ jobId: string; reportId: string }> {
+  const response = await fetch(`${API_URL}/api/report-configs/${configId}/generate`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<{ jobId: string; reportId: string; status: string; message: string }> = await response.json();
+
+  if (!result.success || !result.data) {
+    // Check for "already generating" error
+    if (result.error?.code === 'ALREADY_GENERATING') {
+      const error = new Error(result.error.message) as Error & { code: string; reportId?: string };
+      error.code = 'ALREADY_GENERATING';
+      error.reportId = (result.error as any).reportId;
+      throw error;
+    }
+    throw new Error(result.error?.message || 'Failed to generate report');
+  }
+
+  return { jobId: result.data.jobId, reportId: result.data.reportId };
+}
+
+export async function deleteReport(reportId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/reports/${reportId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+
+  const result: ApiResponse<void> = await response.json();
+
+  if (!result.success) {
+    throw new Error(result.error?.message || 'Failed to delete report');
+  }
+}
+
+// ============================================================================
+// DEBUG - Agent Trace (Hidden)
+// ============================================================================
+
+export interface AgentTraceStep {
+  step: string;
+  timestamp: string;
+  relativeTime: string;
+  prompt?: string;
+  response?: string;
+  data?: any;
+}
+
+export interface AgentTraceSummary {
+  input: any;
+  startTime: string;
+  endTime: string | null;
+  totalDuration: string | null;
+  steps: AgentTraceStep[];
+}
+
+export interface AgentTraceStats {
+  totalDuration: number | null;
+  stepCount: number;
+  stepsByType: Record<string, number>;
+}
+
+export interface AgentTraceFull {
+  stats: AgentTraceStats;
+  trace: {
+    startTime: number;
+    endTime?: number;
+    input: any;
+    steps: Array<{
+      step: string;
+      timestamp: number;
+      prompt?: string;
+      response?: string;
+      data?: any;
+    }>;
+  };
+}
+
+export async function getAgentTraceSummary(): Promise<AgentTraceSummary | null> {
+  try {
+    const response = await fetch(`${API_URL}/api/reports/__debug/trace/summary`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const result: ApiResponse<AgentTraceSummary> = await response.json();
+
+    if (!result.success || !result.data) {
+      return null;
+    }
+
+    return result.data;
+  } catch (error) {
+    console.error('Failed to fetch agent trace summary:', error);
+    return null;
+  }
+}
+
+export async function getAgentTraceFull(): Promise<AgentTraceFull | null> {
+  try {
+    const response = await fetch(`${API_URL}/api/reports/__debug/trace`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    const result: ApiResponse<AgentTraceFull> = await response.json();
+
+    if (!result.success || !result.data) {
+      return null;
+    }
+
+    return result.data;
+  } catch (error) {
+    console.error('Failed to fetch agent trace:', error);
+    return null;
+  }
 }

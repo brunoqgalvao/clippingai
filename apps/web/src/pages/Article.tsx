@@ -1,3 +1,4 @@
+import ReactMarkdown from 'react-markdown';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, Calendar } from 'lucide-react';
 import '../styles/article.css';
@@ -16,6 +17,7 @@ interface Article {
 interface ArticleState {
   article: Article;
   reportData?: any;
+  storedReport?: any;
   companyName?: string;
 }
 
@@ -27,6 +29,24 @@ export default function Article() {
   const state = location.state as ArticleState | null;
   const article = state?.article;
   const companyName = state?.companyName || 'Your Company';
+
+  // Navigate back to report with data preserved (no refetch)
+  const handleBack = () => {
+    const reportSlug = params.reportSlug;
+    if (reportSlug && state?.reportData) {
+      // Navigate back with state to avoid refetch
+      navigate(`/report/${reportSlug}`, {
+        state: {
+          reportData: state.reportData,
+          storedReport: state.storedReport,
+          companyInfo: { name: companyName }
+        },
+        replace: true
+      });
+    } else {
+      navigate(-1);
+    }
+  };
 
   if (!article) {
     return (
@@ -44,6 +64,13 @@ export default function Article() {
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const getImageUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('http')) return url;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    return `${apiUrl}${url}`;
   };
 
   // Parse and format the article content with inline citations
@@ -123,7 +150,7 @@ export default function Article() {
     <div className="article-page">
       {/* Header */}
       <header className="article-header">
-        <button className="back-button" onClick={() => navigate(-1)}>
+        <button className="back-button" onClick={handleBack}>
           <ArrowLeft size={20} />
           <span>Back to Report</span>
         </button>
@@ -134,7 +161,7 @@ export default function Article() {
         {/* Hero Image */}
         {article.imageUrl && (
           <div className="article-hero-image">
-            <img src={article.imageUrl} alt={article.imageAlt || article.title} />
+            <img src={getImageUrl(article.imageUrl)} alt={article.imageAlt || article.title} />
           </div>
         )}
 
@@ -168,7 +195,9 @@ export default function Article() {
         {/* Summary */}
         <div className="article-summary-section">
           <div className="summary-label">Executive Summary</div>
-          <p className="summary-text">{article.summary}</p>
+          <div className="summary-text">
+            <ReactMarkdown>{article.summary}</ReactMarkdown>
+          </div>
         </div>
 
         {/* Main Content */}
@@ -176,20 +205,29 @@ export default function Article() {
           {formatContent(article.content)}
         </div>
 
-        {/* Sources */}
+        {/* Sources - Compact Thumbnails */}
         {article.sources.length > 0 && (
-          <div className="article-sources">
-            <h4>Sources</h4>
-            <ul>
-              {article.sources.map((source, idx) => (
-                <li key={idx}>
-                  <a href={source} target="_blank" rel="noopener noreferrer">
-                    {source}
-                    <ExternalLink size={12} />
+          <div className="article-sources-compact">
+            <div className="sources-label">Sources</div>
+            <div className="sources-thumbnails">
+              {article.sources.map((source, idx) => {
+                const domain = new URL(source).hostname.replace('www.', '');
+                const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                return (
+                  <a
+                    key={idx}
+                    href={source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="source-thumbnail"
+                    title={domain}
+                  >
+                    <img src={faviconUrl} alt={domain} className="source-favicon" />
+                    <span className="source-domain">{domain.split('.')[0]}</span>
                   </a>
-                </li>
-              ))}
-            </ul>
+                );
+              })}
+            </div>
           </div>
         )}
       </article>

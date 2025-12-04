@@ -17,8 +17,10 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@google/genai": "^1.31.0",
     "@playwright/test": "^1.56.1",
     "@types/node": "^20.10.6",
+    "dotenv": "^16.6.1",
     "eslint": "^8.56.0",
     "prettier": "^3.1.1",
     "typescript": "^5.3.3"

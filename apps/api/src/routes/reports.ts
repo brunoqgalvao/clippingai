@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { generateReport } from '../services/reportGeneration.js';
+import {
+  generateReport,
+  getAgentTrace,
+} from '../services/reportGeneration.js';
 import {
   saveGeneratedReport,
   getReportById,
@@ -9,6 +12,8 @@ import {
   updateReportVisibility,
 } from '../services/reportStorage.js';
 import { sendReportEmail } from '../services/email.js';
+import { requireAuth } from '../middleware/auth.js';
+import { prisma } from '@clippingai/database';
 import type { ReportType } from '@clippingai/database';
 
 const router = Router();
@@ -295,6 +300,138 @@ router.post('/send-email', async (req, res) => {
       },
     });
   }
+});
+
+/**
+ * DELETE /api/reports/:id
+ * Delete a report (requires auth)
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'User not authenticated' },
+      });
+    }
+
+    const { id } = req.params;
+
+    // Verify ownership
+    const report = await prisma.generatedReport.findFirst({
+      where: { id, userId: req.userId },
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Report not found' },
+      });
+    }
+
+    // Delete the report
+    await prisma.generatedReport.delete({
+      where: { id },
+    });
+
+    console.log(`✅ Report deleted: ${id}`);
+
+    res.json({
+      success: true,
+      message: 'Report deleted',
+    });
+  } catch (error) {
+    console.error('Delete report error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'DELETE_ERROR',
+        message: 'Failed to delete report',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+    });
+  }
+});
+
+// ============================================================================
+// HIDDEN DEBUG ENDPOINTS - For development inspection
+// Access via: /api/reports/__debug/trace
+// ============================================================================
+
+/**
+ * GET /api/reports/__debug/trace
+ * Get the full agent trace from the last report generation
+ * Always available - trace is captured for every report generation
+ */
+router.get('/__debug/trace', (req, res) => {
+  const trace = getAgentTrace();
+
+  if (!trace) {
+    return res.status(404).json({
+      success: false,
+      error: {
+        code: 'NO_TRACE',
+        message: 'No trace available. Generate a report first.',
+      },
+    });
+  }
+
+  // Calculate some stats
+  const stats = {
+    totalDuration: trace.endTime ? trace.endTime - trace.startTime : null,
+    stepCount: trace.steps.length,
+    stepsByType: trace.steps.reduce((acc, step) => {
+      const baseStep = step.step.replace(/_\d+_.*$/, ''); // Remove iteration numbers
+      acc[baseStep] = (acc[baseStep] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  };
+
+  res.json({
+    success: true,
+    data: {
+      stats,
+      trace,
+    },
+  });
+});
+
+/**
+ * GET /api/reports/__debug/trace/summary
+ * Get a concise summary of the trace (without full prompts/responses)
+ */
+router.get('/__debug/trace/summary', (req, res) => {
+  const trace = getAgentTrace();
+
+  if (!trace) {
+    return res.status(404).json({
+      success: false,
+      error: {
+        code: 'NO_TRACE',
+        message: 'No trace available. Generate a report first.',
+      },
+    });
+  }
+
+  // Create a summary without the full prompts/responses
+  const summary = {
+    input: trace.input,
+    startTime: new Date(trace.startTime).toISOString(),
+    endTime: trace.endTime ? new Date(trace.endTime).toISOString() : null,
+    totalDuration: trace.endTime ? `${((trace.endTime - trace.startTime) / 1000).toFixed(1)}s` : null,
+    steps: trace.steps.map(step => ({
+      step: step.step,
+      timestamp: new Date(step.timestamp).toISOString(),
+      relativeTime: `+${((step.timestamp - trace.startTime) / 1000).toFixed(1)}s`,
+      data: step.data, // Keep the data, but not prompt/response
+    })),
+  };
+
+  res.json({
+    success: true,
+    data: summary,
+  });
 });
 
 export default router;

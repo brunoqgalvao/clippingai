@@ -112,6 +112,19 @@
   font-size: var(--text-sm);
 }
 
+.login-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-md);
+  color: #93c5fd;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+}
+
 .form-field {
   display: flex;
   flex-direction: column;
