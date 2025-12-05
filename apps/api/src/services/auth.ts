@@ -36,8 +36,12 @@ export interface AuthResponse {
     name: string | null;
     companyName: string | null;
     companyDomain: string | null;
-    subscriptionTier: string;
+    timezone: string;
     emailVerified: boolean;
+    subscriptionTier: string;
+    subscriptionStatus: string;
+    createdAt: Date;
+    updatedAt: Date;
   };
   token: string;
 }
@@ -52,7 +56,7 @@ export interface JWTPayload {
 // ============================================================================
 
 /**
- * Create a new user account
+ * Create a new user account or convert anonymous user
  */
 export async function signup(input: SignupInput): Promise<AuthResponse> {
   console.log(`📝 Creating account for ${input.email}...`);
@@ -61,10 +65,6 @@ export async function signup(input: SignupInput): Promise<AuthResponse> {
   const existingUser = await prisma.user.findUnique({
     where: { email: input.email.toLowerCase() },
   });
-
-  if (existingUser) {
-    throw new Error('User with this email already exists');
-  }
 
   // Hash password
   const passwordHash = await hash(input.password, BCRYPT_ROUNDS);
@@ -77,28 +77,56 @@ export async function signup(input: SignupInput): Promise<AuthResponse> {
     else if (cleanCompanyName.includes(' | ')) cleanCompanyName = cleanCompanyName.split(' | ')[0];
   }
 
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      email: input.email.toLowerCase(),
-      passwordHash,
-      name: input.name || null,
-      companyName: cleanCompanyName || null,
-      companyDomain: input.companyDomain || null,
-      timezone: input.timezone || 'America/Los_Angeles',
-      emailVerified: false,
-      subscriptionTier: 'free',
-      subscriptionStatus: 'active',
-    },
-  });
+  let user: User;
+
+  if (existingUser && existingUser.passwordHash === 'anonymous' && existingUser.status === 'ANONYMOUS') {
+    // Convert anonymous user to real user
+    console.log(`🔄 Converting anonymous user to active user: ${input.email}`);
+
+    user = await prisma.user.update({
+      where: { id: existingUser.id },
+      data: {
+        passwordHash,
+        name: input.name || existingUser.name,
+        companyName: cleanCompanyName || existingUser.companyName,
+        companyDomain: input.companyDomain || existingUser.companyDomain,
+        timezone: input.timezone || existingUser.timezone,
+        status: 'ACTIVE', // Mark as converted
+        convertedAt: new Date(), // Track conversion time
+        emailVerified: false,
+      },
+    });
+
+    console.log(`✅ Anonymous user converted to active account: ${user.email}`);
+  } else if (existingUser) {
+    // User already exists with real password
+    throw new Error('User with this email already exists');
+  } else {
+    // Create new user (normal signup flow)
+    user = await prisma.user.create({
+      data: {
+        email: input.email.toLowerCase(),
+        passwordHash,
+        name: input.name || null,
+        companyName: cleanCompanyName || null,
+        companyDomain: input.companyDomain || null,
+        timezone: input.timezone || 'America/Los_Angeles',
+        emailVerified: false,
+        status: 'ACTIVE', // New users are immediately active
+        convertedAt: new Date(),
+        subscriptionTier: 'free',
+        subscriptionStatus: 'active',
+      },
+    });
+
+    console.log(`✅ New account created: ${user.email}`);
+  }
 
   // Generate JWT token
   const token = generateToken({
     userId: user.id,
     email: user.email,
   });
-
-  console.log(`✅ Account created successfully for ${user.email}`);
 
   return {
     user: {
@@ -107,8 +135,12 @@ export async function signup(input: SignupInput): Promise<AuthResponse> {
       name: user.name,
       companyName: user.companyName,
       companyDomain: user.companyDomain,
-      subscriptionTier: user.subscriptionTier,
+      timezone: user.timezone,
       emailVerified: user.emailVerified,
+      subscriptionTier: user.subscriptionTier,
+      subscriptionStatus: user.subscriptionStatus,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     },
     token,
   };
@@ -133,6 +165,11 @@ export async function login(input: LoginInput): Promise<AuthResponse> {
     throw new Error('Invalid email or password');
   }
 
+  // Check if user is still anonymous (hasn't completed signup)
+  if (user.status === 'ANONYMOUS' || user.passwordHash === 'anonymous') {
+    throw new Error('Please complete your signup first');
+  }
+
   // Verify password
   const isValidPassword = await compare(input.password, user.passwordHash);
 
@@ -155,8 +192,12 @@ export async function login(input: LoginInput): Promise<AuthResponse> {
       name: user.name,
       companyName: user.companyName,
       companyDomain: user.companyDomain,
-      subscriptionTier: user.subscriptionTier,
+      timezone: user.timezone,
       emailVerified: user.emailVerified,
+      subscriptionTier: user.subscriptionTier,
+      subscriptionStatus: user.subscriptionStatus,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     },
     token,
   };

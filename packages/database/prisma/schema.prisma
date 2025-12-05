@@ -19,6 +19,12 @@ enum SubscriptionStatus {
   suspended
 }
 
+enum UserStatus {
+  ANONYMOUS // User created during onboarding, no password yet
+  ACTIVE    // User has completed signup with password
+  INACTIVE  // Future: churned, suspended, etc.
+}
+
 model User {
   id                 String             @id @default(uuid())
   email              String             @unique
@@ -28,6 +34,8 @@ model User {
   companyDomain      String?            @map("company_domain") // e.g., "acme.com"
   timezone           String             @default("America/Los_Angeles")
   emailVerified      Boolean            @default(false) @map("email_verified")
+  status             UserStatus         @default(ANONYMOUS)
+  convertedAt        DateTime?          @map("converted_at") // When user converted from ANONYMOUS to ACTIVE
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
   subscriptionTier   SubscriptionTier   @default(free) @map("subscription_tier")
