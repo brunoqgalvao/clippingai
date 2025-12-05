@@ -9,6 +9,7 @@ import Article from './pages/Article';
 import Dashboard from './pages/Dashboard';
 import CreateStream from './pages/CreateStream';
 import StreamHistory from './pages/StreamHistory';
+import StreamSettings from './pages/StreamSettings';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/streams/create" element={<CreateStream />} />
           <Route path="/streams/:id" element={<StreamHistory />} />
+          <Route path="/streams/:id/settings" element={<StreamSettings />} />
           <Route path="/report" element={<Report />} />
           <Route path="/report/:id" element={<Report />} />
           <Route path="/report/public/:slug" element={<Report isPublic />} />

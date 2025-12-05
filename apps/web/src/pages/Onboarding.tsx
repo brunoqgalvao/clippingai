@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Building2,
   TrendingUp,
@@ -14,7 +15,9 @@ import {
   Bell,
   ChevronDown,
   X,
-  Plus
+  Plus,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import Logo, { LogoSymbol } from '../components/Logo';
 import type { CompanyDetectionResult } from '@clippingai/shared';
@@ -63,6 +66,7 @@ export default function Onboarding() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { login } = useAuth();
   const email = searchParams.get('email') || '';
   const stepParam = searchParams.get('step') as OnboardingStep | null;
 
@@ -73,12 +77,16 @@ export default function Onboarding() {
   const [companyInfo, setCompanyInfo] = useState<CompanyDetectionResult | null>(stateData?.companyInfo || null);
   const [selectedLogo, setSelectedLogo] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState('');
+  const [manualInputType, setManualInputType] = useState<'email' | 'website' | 'description'>('email');
   const [frequency, setFrequency] = useState<'daily' | 'weekly'>('weekly');
   const [reportId, setReportId] = useState<string | null>(null);
   const [, setReportData] = useState<GeneratedReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, setGenerationProgress] = useState(0);
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
 
@@ -88,6 +96,22 @@ export default function Onboarding() {
   const [customCompetitors, setCustomCompetitors] = useState<string[]>([]); // User-added custom competitors
   const [competitorInput, setCompetitorInput] = useState('');
   const [showLogoOptions, setShowLogoOptions] = useState(false);
+  const [failedLogos, setFailedLogos] = useState<Set<string>>(new Set());
+
+  // Helper function to extract clean company name
+  const getCleanCompanyName = (fullName: string): string => {
+    if (!fullName) return '';
+    // If there's a pipe separator, take the part after it (usually the company name)
+    if (fullName.includes('|')) {
+      return fullName.split('|').pop()?.trim() || fullName;
+    }
+    // If there's a dash, take the last part
+    if (fullName.includes(' - ')) {
+      return fullName.split(' - ').pop()?.trim() || fullName;
+    }
+    // Otherwise return as is
+    return fullName.trim();
+  };
 
   // Initialize selected competitors from detected ones when companyInfo changes
   useEffect(() => {
@@ -97,25 +121,25 @@ export default function Onboarding() {
     }
   }, [companyInfo?.competitors]);
 
-  // Memoized logo options - include main logo as first selectable option
+  // Memoized logo options - include main logo as first selectable option, filter out failed ones
   const allLogoOptions = useMemo(() => {
     if (!companyInfo) return [];
     const logos: { url: string; isPrimary: boolean }[] = [];
 
-    // Add main logo as primary option
-    if (companyInfo.logo) {
+    // Add main logo as primary option (if not failed)
+    if (companyInfo.logo && !failedLogos.has(companyInfo.logo)) {
       logos.push({ url: companyInfo.logo, isPrimary: true });
     }
 
-    // Add alternatives (filter out duplicates of main logo)
+    // Add alternatives (filter out duplicates of main logo and failed logos)
     companyInfo.logoOptions?.forEach((opt: { url: string }) => {
-      if (opt.url !== companyInfo.logo) {
+      if (opt.url !== companyInfo.logo && !failedLogos.has(opt.url)) {
         logos.push({ url: opt.url, isPrimary: false });
       }
     });
 
     return logos;
-  }, [companyInfo]);
+  }, [companyInfo, failedLogos]);
 
   // Real company detection using API
   useEffect(() => {
@@ -200,6 +224,11 @@ export default function Onboarding() {
       return;
     }
 
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
     setSignupLoading(true);
     setError(null);
 
@@ -211,6 +240,9 @@ export default function Onboarding() {
         companyName: companyInfo?.name,
         companyDomain: companyInfo?.domain,
       });
+
+      // Log the user in automatically after signup
+      await login({ email, password });
 
       // Update the existing temporary report config created during report generation
       // instead of creating a new one
@@ -229,14 +261,16 @@ export default function Onboarding() {
           ...customCompetitors
         ].filter((c: string, i, arr) => arr.indexOf(c) === i); // dedupe
 
+        const cleanCompanyName = getCleanCompanyName(companyInfo?.name || '');
+
         await updateReportConfig(tempConfig.id, {
-          title: `${companyInfo?.name || 'Your Company'} ${frequency === 'daily' ? 'Daily' : 'Weekly'} Intelligence`,
-          description: `Automated ${frequency} competitive intelligence reports for ${companyInfo?.name || 'your company'}`,
+          title: `${cleanCompanyName || 'Your Company'} ${frequency === 'daily' ? 'Daily' : 'Weekly'} Intelligence`,
+          description: `Automated ${frequency} competitive intelligence reports for ${cleanCompanyName || 'your company'}`,
           frequency: frequency,
           scheduleTime: '09:00',
           scheduleDay: frequency === 'weekly' ? 'monday' : undefined,
           searchParameters: {
-            companyName: companyInfo?.name,
+            companyName: cleanCompanyName || companyInfo?.name,
             companyDomain: companyInfo?.domain,
             industry: companyInfo?.industry,
             competitors: allCompetitors,
@@ -245,8 +279,8 @@ export default function Onboarding() {
         });
       }
 
-      // Account created successfully with stream updated
-      setStep('complete');
+      // Account created successfully with stream updated - navigate directly to dashboard
+      navigate('/dashboard');
     } catch (err) {
       console.error('Signup error:', err);
       setError(err instanceof Error ? err.message : 'Failed to create account');
@@ -328,7 +362,25 @@ export default function Onboarding() {
     if (!manualInput.trim()) return;
 
     try {
-      const result = await processManualCompany(manualInput);
+      let inputText = manualInput;
+
+      // If email, try detection again with new email
+      if (manualInputType === 'email') {
+        const result = await detectCompany(manualInput);
+        setCompanyInfo(result);
+        setSelectedLogo(result.logo || null);
+        setError(null);
+        setStep('verify');
+        return;
+      }
+
+      // If website, format as a description with website
+      if (manualInputType === 'website') {
+        inputText = `Our company website is ${manualInput}`;
+      }
+
+      // Process description or formatted website input
+      const result = await processManualCompany(inputText);
       setCompanyInfo(result);
       setSelectedLogo(result.logo || null);
       setError(null);
@@ -341,7 +393,8 @@ export default function Onboarding() {
   };
 
   const handleViewReport = () => {
-    navigate(`/report/${reportId}`);
+    // After signup, navigate to dashboard instead of specific report
+    navigate('/dashboard');
   };
 
   return (
@@ -414,18 +467,30 @@ export default function Onboarding() {
               <div className="company-verification-card">
                 {/* Company Logo Section */}
                 <div className="logo-section">
-                  {selectedLogo ? (
-                    <img src={selectedLogo} alt={companyInfo.name} className="company-logo" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                  ) : (
-                    <div className="logo-placeholder">
-                      <Building2 size={48} />
-                    </div>
-                  )}
+                  <div className="logo-with-edit">
+                    {selectedLogo ? (
+                      <img src={selectedLogo} alt={companyInfo.name} className="company-logo" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    ) : (
+                      <div className="logo-placeholder">
+                        <Building2 size={48} />
+                      </div>
+                    )}
+                    {allLogoOptions.length > 1 && (
+                      <button
+                        className="logo-edit-btn"
+                        onClick={() => setShowLogoOptions(!showLogoOptions)}
+                        title="Choose a different logo"
+                        style={{ '--tooltip-delay': '0.5s' } as React.CSSProperties}
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Company Info */}
                 <div className="company-info-section">
-                  <h3 className="company-name-large">{companyInfo.name}</h3>
+                  <h3 className="company-name-large">{getCleanCompanyName(companyInfo.name)}</h3>
                   <p className="company-domain">{companyInfo.website}</p>
                   {companyInfo.description && (
                     <p className="company-description">{companyInfo.description}</p>
@@ -438,35 +503,28 @@ export default function Onboarding() {
                   )}
                 </div>
 
-                {/* Logo Options - Fixed: main logo is now selectable */}
-                {allLogoOptions.length > 1 && (
+                {/* Logo Options - Now toggled by pencil icon */}
+                {allLogoOptions.length > 1 && showLogoOptions && (
                   <div className="logo-options">
-                    <button
-                      className="toggle-logo-options"
-                      onClick={() => setShowLogoOptions(!showLogoOptions)}
-                    >
-                      {showLogoOptions ? 'Hide logo options' : 'Choose a different logo'}
-                      <ChevronDown size={16} className={showLogoOptions ? 'rotated' : ''} />
-                    </button>
-
-                    {showLogoOptions && (
-                      <div className="logo-grid">
-                        {allLogoOptions.map((option, index) => (
-                          <div
-                            key={index}
-                            className={`logo-option ${selectedLogo === option.url ? 'selected' : ''} ${option.isPrimary ? 'primary' : ''}`}
-                            onClick={() => setSelectedLogo(option.url)}
-                          >
-                            <img
-                              src={option.url}
-                              alt={`${companyInfo.name} logo option`}
-                              onError={(e) => { e.currentTarget.parentElement!.style.display = 'none'; }}
-                            />
-                            {option.isPrimary && <span className="primary-badge">Detected</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <p className="logo-options-label">Choose a different logo:</p>
+                    <div className="logo-grid">
+                      {allLogoOptions.map((option, index) => (
+                        <div
+                          key={index}
+                          className={`logo-option ${selectedLogo === option.url ? 'selected' : ''} ${option.isPrimary ? 'primary' : ''}`}
+                          onClick={() => setSelectedLogo(option.url)}
+                        >
+                          <img
+                            src={option.url}
+                            alt={`${companyInfo.name} logo option`}
+                            onError={(e) => {
+                              // Mark this logo as failed so it gets filtered out
+                              setFailedLogos(prev => new Set(prev).add(option.url));
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -491,20 +549,76 @@ export default function Onboarding() {
             <div className="step-content">
               <h2 className="section-title">Tell us about your company</h2>
               <p className="section-subtitle">
-                Describe your company in your own words - our AI will understand
+                Choose the easiest way to help us find your company
               </p>
 
+              {/* Input type selector */}
+              <div className="manual-input-type-selector">
+                <button
+                  className={`input-type-btn ${manualInputType === 'email' ? 'active' : ''}`}
+                  onClick={() => { setManualInputType('email'); setManualInput(''); }}
+                >
+                  Try different email
+                </button>
+                <button
+                  className={`input-type-btn ${manualInputType === 'website' ? 'active' : ''}`}
+                  onClick={() => { setManualInputType('website'); setManualInput(''); }}
+                >
+                  Enter website
+                </button>
+                <button
+                  className={`input-type-btn ${manualInputType === 'description' ? 'active' : ''}`}
+                  onClick={() => { setManualInputType('description'); setManualInput(''); }}
+                >
+                  Describe company
+                </button>
+              </div>
+
               <div className="manual-input-section">
-                <textarea
-                  className="manual-textarea"
-                  placeholder="Example: We're a B2B SaaS company that helps marketing teams automate their reporting. We compete with HubSpot and Marketo, and our website is acme.com"
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  rows={6}
-                />
-                <p className="input-hint">
-                  Include your company name, what you do, website, and any competitors you know about
-                </p>
+                {manualInputType === 'email' && (
+                  <>
+                    <input
+                      type="email"
+                      className="text-input"
+                      placeholder="colleague@yourcompany.com"
+                      value={manualInput}
+                      onChange={(e) => setManualInput(e.target.value)}
+                    />
+                    <p className="input-hint">
+                      Try a corporate email from your company
+                    </p>
+                  </>
+                )}
+
+                {manualInputType === 'website' && (
+                  <>
+                    <input
+                      type="url"
+                      className="text-input"
+                      placeholder="https://yourcompany.com"
+                      value={manualInput}
+                      onChange={(e) => setManualInput(e.target.value)}
+                    />
+                    <p className="input-hint">
+                      Enter your company's website URL
+                    </p>
+                  </>
+                )}
+
+                {manualInputType === 'description' && (
+                  <>
+                    <textarea
+                      className="manual-textarea"
+                      placeholder="Example: We're ABC Company, a B2B SaaS company that helps marketing teams automate their reporting. We compete with HubSpot and Marketo, and our website is acmecompany.com"
+                      value={manualInput}
+                      onChange={(e) => setManualInput(e.target.value)}
+                      rows={6}
+                    />
+                    <p className="input-hint">
+                      Include your company name, what you do, website, and any competitors you know about
+                    </p>
+                  </>
+                )}
               </div>
 
               <div className="step-actions">
@@ -538,7 +652,7 @@ export default function Onboarding() {
               <div className="company-context">
                 <span className="company-badge">
                   <Check size={16} />
-                  {companyInfo.name}
+                  {getCleanCompanyName(companyInfo.name)}
                 </span>
               </div>
 
@@ -576,6 +690,9 @@ export default function Onboarding() {
                   Continue with {selectedIntelligenceTypes.length} selected
                   <ArrowRight size={20} />
                 </button>
+                <button className="btn-text" onClick={() => setStep('verify')}>
+                  Go back
+                </button>
               </div>
             </div>
           </div>
@@ -588,7 +705,7 @@ export default function Onboarding() {
               <div className="company-context">
                 <span className="company-badge">
                   <Check size={16} />
-                  {companyInfo.name}
+                  {getCleanCompanyName(companyInfo.name)}
                 </span>
               </div>
 
@@ -598,9 +715,8 @@ export default function Onboarding() {
               </p>
 
               <div className="context-form">
-                {/* Competitor Section - show if competitors selected */}
-                {selectedIntelligenceTypes.includes('competitors') && (
-                  <div className="context-section">
+                {/* Competitor Section - always show */}
+                <div className="context-section">
                     <label className="form-label">
                       <Target size={20} />
                       Who are your main competitors?
@@ -686,8 +802,7 @@ export default function Onboarding() {
                     <p className="selected-count">
                       {selectedCompetitors.length + customCompetitors.length} competitor{selectedCompetitors.length + customCompetitors.length !== 1 ? 's' : ''} selected
                     </p>
-                  </div>
-                )}
+                </div>
 
                 {/* Frequency Section - always show */}
                 <div className="context-section">
@@ -765,7 +880,7 @@ export default function Onboarding() {
               </div>
 
               <p className="generation-note">
-                This usually takes 20-30 seconds. We're being thorough.
+                This usually takes 30-60 seconds. We're being thorough.
               </p>
             </div>
           </div>
@@ -796,16 +911,74 @@ export default function Onboarding() {
 
                 <div className="form-section">
                   <label className="form-label">Password</label>
-                  <input
-                    type="password"
-                    placeholder="Create a password (min 8 characters)"
-                    className="text-input"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={signupLoading}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Create a password (min 8 characters)"
+                      className="text-input"
+                      style={{ paddingRight: '3rem' }}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={signupLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '1rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-tertiary)',
+                        cursor: 'pointer',
+                        padding: '0.25rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      disabled={signupLoading}
+                    >
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-section">
+                  <label className="form-label">Confirm Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      placeholder="Re-enter your password"
+                      className="text-input"
+                      style={{ paddingRight: '3rem' }}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      disabled={signupLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '1rem',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-tertiary)',
+                        cursor: 'pointer',
+                        padding: '0.25rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      disabled={signupLoading}
+                    >
+                      {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
                   <p className="input-hint">
-                    We'll use this to secure your account and dashboard
+                    Please confirm your password to avoid typos
                   </p>
                 </div>
 
@@ -832,7 +1005,7 @@ export default function Onboarding() {
                   <button
                     type="submit"
                     className="btn-primary-large"
-                    disabled={signupLoading || !password}
+                    disabled={signupLoading || !password || !confirmPassword}
                   >
                     {signupLoading ? (
                       <>
@@ -867,8 +1040,7 @@ export default function Onboarding() {
               </h1>
 
               <p className="step-subtitle">
-                Your account is created and your first report is ready! You'll receive future
-                reports via email at {email} starting {frequency === 'daily' ? 'tomorrow morning' : 'next week'}.
+                Your account is created! You'll receive intelligence reports via email at {email} starting {frequency === 'daily' ? 'tomorrow morning' : 'next week'}.
               </p>
 
               <div className="report-preview-card">
@@ -901,7 +1073,7 @@ export default function Onboarding() {
                   className="btn-primary-large"
                   onClick={handleViewReport}
                 >
-                  View Your Report
+                  Go to Dashboard
                   <ArrowRight size={20} />
                 </button>
               </div>

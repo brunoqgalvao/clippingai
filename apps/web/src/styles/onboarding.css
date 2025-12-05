@@ -281,6 +281,57 @@
   margin-bottom: var(--space-8);
 }
 
+.logo-with-edit {
+  position: relative;
+  display: inline-block;
+}
+
+.logo-edit-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: 50%;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-md);
+}
+
+.logo-edit-btn::before {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--gray-900);
+  color: var(--white);
+  font-size: 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.logo-edit-btn:hover::before {
+  opacity: 1;
+}
+
+.logo-edit-btn:hover {
+  background: var(--accent-primary);
+  color: var(--white);
+  border-color: var(--accent-primary);
+  transform: scale(1.1);
+}
+
 .company-logo {
   max-width: 120px;
   max-height: 120px;
@@ -354,31 +405,12 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-.toggle-logo-options {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 auto var(--space-4);
-  padding: var(--space-2) var(--space-4);
+.logo-options-label {
   font-family: var(--font-body);
   font-size: var(--text-sm);
   color: var(--text-tertiary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: color var(--transition-base);
-}
-
-.toggle-logo-options:hover {
-  color: var(--text-primary);
-}
-
-.toggle-logo-options svg {
-  transition: transform var(--transition-base);
-}
-
-.toggle-logo-options svg.rotated {
-  transform: rotate(180deg);
+  text-align: center;
+  margin-bottom: var(--space-4);
 }
 
 .logo-grid {
@@ -386,6 +418,8 @@
   justify-content: center;
   flex-wrap: wrap;
   gap: var(--space-3);
+  max-width: 400px;
+  margin: 0 auto;
 }
 
 .logo-option {
@@ -422,8 +456,8 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 6px;
-  background: var(--text-primary);
-  color: var(--black);
+  background: var(--accent-primary);
+  color: var(--white);
   font-size: 9px;
   font-weight: 600;
   border-radius: var(--radius-sm);
@@ -454,6 +488,38 @@
 }
 
 /* Manual Input */
+.manual-input-type-selector {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  margin-bottom: var(--space-8);
+}
+
+.input-type-btn {
+  padding: var(--space-3) var(--space-6);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.input-type-btn:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-primary);
+}
+
+.input-type-btn.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--white);
+  font-weight: 600;
+}
+
 .manual-input-section {
   margin-bottom: var(--space-8);
 }
@@ -591,9 +657,9 @@
 }
 
 .suggestion-card.selected .card-checkbox {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: var(--black);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--white);
 }
 
 .card-title {
@@ -1120,9 +1186,9 @@
 }
 
 .intelligence-card.selected .card-checkbox {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: var(--black);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--white);
 }
 
 .intelligence-card .card-title {
@@ -1277,9 +1343,10 @@
 }
 
 .competitor-chip.suggestion.selected {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: var(--black);
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--white);
+  font-weight: 600;
 }
 
 /* User-added custom chips */
