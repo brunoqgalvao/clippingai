@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 
 export interface SaveReportInput {
   userId?: string; // Optional until auth is implemented
+  userEmail?: string; // Real user email for anonymous user creation
   reportConfigId?: string; // Optional - for scheduled reports
   companyName: string;
   companyDomain: string;
@@ -59,7 +60,11 @@ export async function saveGeneratedReport(
   // If no userId provided, create or find a temporary anonymous user
   // This allows the MVP to work without authentication
   if (!userId) {
-    const anonymousUser = await getOrCreateAnonymousUser(input.companyDomain);
+    const anonymousUser = await getOrCreateAnonymousUser(
+      input.userEmail || `anonymous@${input.companyDomain}`,
+      input.companyDomain,
+      input.companyName
+    );
     userId = anonymousUser.id;
   }
 
@@ -238,25 +243,29 @@ export async function updateReportVisibility(
 
 /**
  * Get or create an anonymous user for MVP (until auth is implemented)
- * Uses company domain as unique identifier
+ * Uses real email to avoid collisions when multiple users from same company try the product
  */
-async function getOrCreateAnonymousUser(companyDomain: string) {
-  const anonymousEmail = `anonymous@${companyDomain}`;
-
+async function getOrCreateAnonymousUser(
+  email: string,
+  companyDomain: string,
+  companyName: string
+) {
   let user = await prisma.user.findUnique({
-    where: { email: anonymousEmail },
+    where: { email: email.toLowerCase() },
   });
 
   if (!user) {
     user = await prisma.user.create({
       data: {
-        email: anonymousEmail,
-        passwordHash: 'anonymous', // Placeholder until auth is implemented
+        email: email.toLowerCase(),
+        passwordHash: 'anonymous', // Marker for unconverted users
         companyDomain,
-        name: 'Anonymous User',
+        companyName,
+        status: 'ANONYMOUS', // User hasn't completed signup yet
+        convertedAt: null,
       },
     });
-    console.log(`👤 Created anonymous user: ${anonymousEmail}`);
+    console.log(`👤 Created anonymous user: ${email} (status: ANONYMOUS)`);
   }
 
   return user;

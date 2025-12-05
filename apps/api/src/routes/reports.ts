@@ -26,6 +26,7 @@ const generateReportSchema = z.object({
   reportType: z.enum(['media_monitoring']).optional().default('media_monitoring'),
   dateRange: z.number().min(1).max(30).optional(),
   userId: z.string().optional(), // Optional until auth is implemented
+  userEmail: z.string().email().optional(), // User's real email for anonymous user creation
   saveToDatabase: z.boolean().optional().default(true),
   isPublic: z.boolean().optional().default(false),
 });
@@ -56,6 +57,7 @@ router.post('/generate', async (req, res) => {
     if (input.saveToDatabase !== false) {
       const saved = await saveGeneratedReport({
         userId: input.userId,
+        userEmail: input.userEmail,
         companyName: input.companyName,
         companyDomain: input.companyDomain,
         reportType: input.reportType as ReportType,

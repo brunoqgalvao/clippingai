@@ -21,28 +21,48 @@ export default function Dashboard() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Redirect to login if not authenticated
+  // Add small delay to avoid race condition with login state update
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate('/login');
+      const timeout = setTimeout(() => {
+        // Double-check after delay to handle login race condition
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          navigate('/login');
+        }
+      }, 200);
+      return () => clearTimeout(timeout);
     }
   }, [authLoading, isAuthenticated, navigate]);
 
   useEffect(() => {
     async function loadData() {
+      console.log('Dashboard loadData:', { authLoading, isAuthenticated, streamsLoaded, user });
+
       // Wait for auth to finish loading
-      if (authLoading) return;
+      if (authLoading) {
+        console.log('Still loading auth...');
+        return;
+      }
 
       // If not authenticated, don't try to load data
-      if (!isAuthenticated) return;
+      if (!isAuthenticated) {
+        console.log('Not authenticated, skipping data load');
+        setLoading(false);
+        return;
+      }
 
       // If already loaded from cache, skip fetch
       if (streamsLoaded) {
+        console.log('Streams already loaded from cache');
         setLoading(false);
         return;
       }
 
       try {
+        console.log('Fetching streams...');
         await getCachedOrFetchStreams();
+        console.log('Streams loaded successfully');
       } catch (err) {
         console.error('Error loading dashboard:', err);
         setError('Failed to load dashboard data');
@@ -52,7 +72,7 @@ export default function Dashboard() {
     }
 
     loadData();
-  }, [authLoading, isAuthenticated, streamsLoaded, getCachedOrFetchStreams]);
+  }, [authLoading, isAuthenticated, streamsLoaded, user, getCachedOrFetchStreams]);
 
   const handleLogout = () => {
     clearCache(); // Clear cached data on logout

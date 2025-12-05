@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import Logo from '../components/Logo';
-import { login } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import '../styles/login.css';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState(searchParams.get('email') || '');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -23,12 +24,13 @@ export default function Login() {
       await login({ email, password });
 
       // Token is automatically stored by the login function
-      // Navigate to dashboard
-      navigate('/dashboard');
+      // Wait a tick for auth state to update before navigating
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 100);
     } catch (err) {
       console.error('Login error:', err);
       setError(err instanceof Error ? err.message : 'Invalid email or password');
-    } finally {
       setIsLoading(false);
     }
   };
