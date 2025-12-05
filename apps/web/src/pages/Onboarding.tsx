@@ -212,33 +212,40 @@ export default function Onboarding() {
         companyDomain: companyInfo?.domain,
       });
 
-      // Create intelligence stream for the user with their preferences
-      const { createReportConfig } = await import('../lib/api');
+      // Update the existing temporary report config created during report generation
+      // instead of creating a new one
+      const { getReportConfigs, updateReportConfig } = await import('../lib/api');
 
-      // Combine selected detected competitors and user-added custom competitors
-      const allCompetitors = [
-        ...selectedCompetitors,
-        ...customCompetitors
-      ].filter((c: string, i, arr) => arr.indexOf(c) === i); // dedupe
+      // Get all user's configs (should have the temp one from report generation)
+      const configs = await getReportConfigs();
 
-      await createReportConfig({
-        title: `${companyInfo?.name || 'Your Company'} ${frequency === 'daily' ? 'Daily' : 'Weekly'} Intelligence`,
-        description: `Automated ${frequency} competitive intelligence reports for ${companyInfo?.name || 'your company'}`,
-        reportType: 'media_monitoring',
-        frequency: frequency, // FIX: use actual frequency state
-        scheduleTime: '09:00',
-        scheduleDay: frequency === 'weekly' ? 'monday' : undefined,
-        searchParameters: {
-          companyName: companyInfo?.name,
-          companyDomain: companyInfo?.domain,
-          industry: companyInfo?.industry,
-          competitors: allCompetitors, // FIX: include user's competitors
-          dateRange: '7d',
-        },
-        recipients: [email],
-      });
+      if (configs.length > 0) {
+        // Update the first (temp) config with user preferences
+        const tempConfig = configs[0];
 
-      // Account created successfully with stream
+        // Combine selected detected competitors and user-added custom competitors
+        const allCompetitors = [
+          ...selectedCompetitors,
+          ...customCompetitors
+        ].filter((c: string, i, arr) => arr.indexOf(c) === i); // dedupe
+
+        await updateReportConfig(tempConfig.id, {
+          title: `${companyInfo?.name || 'Your Company'} ${frequency === 'daily' ? 'Daily' : 'Weekly'} Intelligence`,
+          description: `Automated ${frequency} competitive intelligence reports for ${companyInfo?.name || 'your company'}`,
+          frequency: frequency,
+          scheduleTime: '09:00',
+          scheduleDay: frequency === 'weekly' ? 'monday' : undefined,
+          searchParameters: {
+            companyName: companyInfo?.name,
+            companyDomain: companyInfo?.domain,
+            industry: companyInfo?.industry,
+            competitors: allCompetitors,
+            dateRange: '7d',
+          },
+        });
+      }
+
+      // Account created successfully with stream updated
       setStep('complete');
     } catch (err) {
       console.error('Signup error:', err);
@@ -289,7 +296,8 @@ export default function Onboarding() {
         industry: companyInfo!.industry,
         competitors: allCompetitors,
         reportType: 'media_monitoring',
-        dateRange: 7
+        dateRange: 7,
+        userEmail: email // Pass real email for anonymous user creation
       });
 
       clearInterval(progressInterval);

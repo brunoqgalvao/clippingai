@@ -77,6 +77,7 @@ export interface GenerateReportInput {
   reportType: 'media_monitoring';
   dateRange?: number;
   userId?: string; // Optional until auth is implemented
+  userEmail?: string; // Real user email for anonymous user creation
   saveToDatabase?: boolean;
   isPublic?: boolean;
 }
