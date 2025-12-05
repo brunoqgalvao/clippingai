@@ -4,6 +4,7 @@ import { ArrowLeft, Calendar, ArrowRight, LayoutDashboard, Loader2, Settings, Pl
 import { generateReportForConfig, getJobStatus, deleteReport, deleteReportConfig, type ReportConfig, type StoredReport } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useReportCache } from '../contexts/ReportCacheContext';
+import { getCleanCompanyName } from '../lib/utils';
 import Logo from '../components/Logo';
 import '../styles/stream-history.css';
 
@@ -349,8 +350,8 @@ export default function StreamHistory() {
         <div className="stream-history-info-content">
           <div className="stream-info-header">
             <div className="stream-info-text">
-              <h1 className="stream-history-title">{stream.title}</h1>
-              <p className="stream-history-description">{stream.description}</p>
+              <h1 className="stream-history-title">{getCleanCompanyName(stream.title)}</h1>
+              <p className="stream-history-description">{getCleanCompanyName(stream.description || '')}</p>
 
               <div className="stream-history-meta">
                 <div className="stream-meta-item">

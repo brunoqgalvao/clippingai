@@ -4,6 +4,7 @@ import { Plus, Loader2, LayoutDashboard, LogOut, Settings, Zap, Clock, MoreVerti
 import { generateReportForConfig, getJobStatus, deleteReportConfig, type ReportConfig } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useReportCache } from '../contexts/ReportCacheContext';
+import { getCleanCompanyName } from '../lib/utils';
 import Logo from '../components/Logo';
 import '../styles/dashboard.css';
 
@@ -394,11 +395,11 @@ export default function Dashboard() {
                     </div>
 
                     <h3 className="dashboard-report-title">
-                      {stream.title}
+                      {getCleanCompanyName(stream.title)}
                     </h3>
 
                     <p className="dashboard-stream-description">
-                      {stream.description}
+                      {getCleanCompanyName(stream.description || '')}
                     </p>
 
                     <div className="dashboard-card-footer">

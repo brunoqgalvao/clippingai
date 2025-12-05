@@ -203,6 +203,34 @@
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-8);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  margin-top: var(--space-2);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--text-primary);
+  background: var(--overlay-light);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-login .loading {
   display: flex;
   align-items: center;
