@@ -25,7 +25,7 @@ if (result.error) {
   });
 }
 
-const app = express();
+const app: express.Application = express();
 const PORT = process.env.API_PORT || 3001;
 
 // Rate Limiter
@@ -51,23 +51,22 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Import routes
-import onboardingRoutes from './routes/onboarding.js';
-import reportsRoutes from './routes/reports.js';
-import reportConfigsRoutes from './routes/reportConfigs.js';
-import authRoutes from './routes/auth.js';
-import jobsRoutes from './routes/jobs.js';
-
 // API routes
-app.get('/api', (req, res) => {
+app.get('/api', (_req, res) => {
   res.json({ message: 'Clipping.AI API' });
 });
 
-// Mount routes
+// Import and mount routes dynamically (after .env is loaded)
+const onboardingRoutes = (await import('./routes/onboarding.js')).default;
+const reportsRoutes = (await import('./routes/reports.js')).default;
+const reportConfigsRoutes = (await import('./routes/reportConfigs.js')).default;
+const authRoutes = (await import('./routes/auth.js')).default;
+const jobsRoutes = (await import('./routes/jobs.js')).default;
+
 app.use('/api/auth', authRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/reports', reportsRoutes);
@@ -75,7 +74,7 @@ app.use('/api/report-configs', reportConfigsRoutes);
 app.use('/api/jobs', jobsRoutes);
 
 // Error handling
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err.stack);
   res.status(500).json({
     success: false,
