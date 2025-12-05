@@ -12,6 +12,16 @@ import {
   type CompanyKnowledge,
 } from './companyKnowledge.js';
 import { saveImageLocally, saveBase64ImageLocally } from './imageStorage.js';
+import {
+  generateReportWithTela,
+  convertTelaResponse,
+  type TelaReportResponse,
+} from './telaAgent.js';
+
+// Feature flag: Use Tela Agent for report generation
+// Default: false (use fast legacy pipeline for onboarding)
+// Set USE_TELA_AGENT=true for deep research (scheduled reports)
+const USE_TELA_AGENT = process.env.USE_TELA_AGENT === 'true';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -48,6 +58,7 @@ export interface ReportGenerationInput {
   dateRange?: number; // days to look back, default 7
   userFeedback?: Record<string, any>; // from previous reports
   userId?: string; // For loading company knowledge
+  useDeepResearch?: boolean; // Force Tela agent for deep research (for scheduled reports)
 }
 
 export interface ReportArticle {
@@ -156,35 +167,44 @@ async function planSearchQueries(input: ReportGenerationInput): Promise<SearchQu
 function buildQueryPlanningPrompt(input: ReportGenerationInput): string {
   const { companyName, industry, competitors = [], dateRange = 7 } = input;
 
-  return `You are a research assistant planning search queries for a media monitoring report.
+  return `You are a senior competitive intelligence analyst planning research queries.
 
+## Context
 Company: ${companyName}
 Industry: ${industry || 'Unknown'}
-Competitors: ${competitors.length > 0 ? competitors.join(', ') : 'To be discovered'}
+Competitors: ${competitors.length > 0 ? competitors.join(', ') : 'Unknown'}
 Time Range: Last ${dateRange} days
 
-Focus on:
-- News articles and press mentions about ${companyName}
-- Market trends and industry developments in ${industry || 'the sector'}
-- Competitor activities and announcements (${competitors.join(', ')})
-- Industry analysis and expert commentary
-- Technology and innovation news relevant to the company
+## Your Task
+Generate EXACTLY 6 search queries, ONE for EACH of these distinct categories:
 
-Generate 5-7 optimal search queries to find the most relevant, recent information.
+1. **COMPANY NEWS**: Direct news about ${companyName} (product launches, announcements, leadership)
+2. **COMPETITOR #1**: News about ${competitors[0] || 'main competitor'} specifically
+3. **COMPETITOR #2**: News about ${competitors[1] || 'another competitor'} or competitive landscape
+4. **INDUSTRY TRENDS**: Market shifts, growth projections, emerging patterns in ${industry || 'the industry'}
+5. **TECHNOLOGY/INNOVATION**: AI, automation, tech developments affecting ${industry || 'this space'}
+6. **REGULATION/POLICY**: Regulatory changes, compliance news, policy impacts on ${industry || 'the sector'}
 
-Each query should:
-- Be specific and targeted to media coverage and articles
-- Focus on recent developments (last ${dateRange} days)
-- Cover different aspects: company news, industry trends, competitor activities
-- Be likely to return high-quality news articles and publications
+## Query Guidelines
+- Be SPECIFIC - include company/product names when relevant
+- Add time indicators like "2024" or "latest" or "announces"
+- Avoid generic queries that return listicles
+- Target news sites and publications, not forums
 
-Return ONLY valid JSON in this format:
+## Example Good Queries
+- "${companyName} announces product launch 2024"
+- "${competitors[0] || 'competitor'} funding round news"
+- "${industry || 'fintech'} market growth forecast 2024"
+
+Return ONLY valid JSON:
 {
   "queries": [
-    {
-      "query": "the search query string",
-      "reasoning": "why this query is valuable"
-    }
+    {"query": "...", "reasoning": "Category: COMPANY NEWS - ..."},
+    {"query": "...", "reasoning": "Category: COMPETITOR #1 - ..."},
+    {"query": "...", "reasoning": "Category: COMPETITOR #2 - ..."},
+    {"query": "...", "reasoning": "Category: INDUSTRY TRENDS - ..."},
+    {"query": "...", "reasoning": "Category: TECHNOLOGY - ..."},
+    {"query": "...", "reasoning": "Category: REGULATION - ..."}
   ]
 }`;
 }
@@ -339,28 +359,53 @@ Preview: ${r.content.slice(0, 300)}...
     )
     .join('\n---\n');
 
-  return `You are filtering search results for a media monitoring digest about ${input.companyName} in the ${input.industry || 'their'} industry.
+  return `You are a senior intelligence analyst curating a high-value briefing for ${input.companyName}'s leadership.
 
-Review these ${results.length} search results and select the ${targetCount} MOST valuable articles.
+Your task: Select EXACTLY ${targetCount} articles that together provide DIVERSE, ACTIONABLE intelligence.
 
-**Selection Criteria:**
-- **Relevance**: Direct connection to ${input.companyName}, their industry (${input.industry}), or key competitors
-- **Quality**: Credible news sources with substantive content (avoid fluff, listicles, ads)
-- **Uniqueness**: Avoid duplicate coverage of the same story
-- **Actionability**: Contains concrete information, data, or developments
-- **Recency**: Prefer recent news
+## CRITICAL: THEME DIVERSITY REQUIREMENT
+Each article MUST cover a DIFFERENT theme/angle. Examples of distinct themes:
+- Company-specific news (${input.companyName} announcements, products, leadership)
+- Direct competitor moves (${input.competitors?.join(', ') || 'competitors'})
+- Industry/market trends
+- Regulatory/policy changes
+- Technology shifts (AI, etc.)
+- Customer/market dynamics
+- M&A / Investment activity
 
-**IMPORTANT:**
-- REJECT articles that are too generic or tangentially related
-- REJECT promotional content or press releases without substance
-- PREFER articles with specific facts, data, or developments
-- PREFER articles about companies/trends directly relevant to ${input.companyName}
+❌ DO NOT select multiple articles about the same story/announcement
+❌ DO NOT select 2+ articles on the same theme (e.g., two "AI in fintech" articles)
+❌ DO NOT select articles that would have overlapping insights
 
-Results:
+## Quality Filters
+REJECT:
+- Generic industry overviews with no specific news
+- Promotional fluff or press releases restating obvious facts
+- Listicles ("Top 10 trends...")
+- Articles older than 2 weeks unless highly significant
+- Tangentially related content
+
+PREFER:
+- Specific facts, numbers, dates, names
+- Breaking news or recent developments
+- Actionable competitive intelligence
+- Strategic implications for ${input.companyName}
+
+## Available Articles (${results.length} total):
 ${resultsText}
 
-Return ONLY a JSON array of indices for the ${targetCount} best articles:
-{"selected": [0, 3, 5, 8, 12]}`;
+## Your Selection Process:
+1. First, identify the main THEME of each article
+2. Group articles by theme
+3. Pick the SINGLE BEST article from each theme
+4. Ensure your final ${targetCount} articles cover ${targetCount} DIFFERENT themes
+
+Return JSON with your reasoning:
+{
+  "reasoning": "Brief explanation of theme diversity in your selection",
+  "themes": ["theme1", "theme2", "theme3", "theme4", "theme5"],
+  "selected": [0, 3, 5, 8, 12]
+}`;
 }
 
 function parseExtractionResponse(response: string): number[] {
@@ -369,6 +414,15 @@ function parseExtractionResponse(response: string): number[] {
     if (!jsonMatch) throw new Error('No JSON found');
 
     const parsed = JSON.parse(jsonMatch[0]);
+
+    // Log the themes for debugging
+    if (parsed.themes) {
+      console.log(`📊 Selected themes: ${parsed.themes.join(', ')}`);
+    }
+    if (parsed.reasoning) {
+      console.log(`💡 Selection reasoning: ${parsed.reasoning.slice(0, 100)}...`);
+    }
+
     return parsed.selected || [];
   } catch (error) {
     console.error('Error parsing extraction response:', error);
@@ -885,14 +939,13 @@ Think: editorial magazine cover, tech conference poster, modern art museum.`;
 }
 
 // ============================================================================
-// MAIN REPORT GENERATOR
+// MAIN REPORT GENERATOR (Tela Agent)
 // ============================================================================
 
 export async function generateReport(
   input: ReportGenerationInput
 ): Promise<GeneratedReportContent> {
   const startTime = Date.now();
-  console.log(`\n🚀 Starting report generation for ${input.companyName}...`);
 
   // Always initialize trace for debugging
   currentTrace = {
@@ -901,6 +954,135 @@ export async function generateReport(
     steps: [],
   };
   traceStep('report_generation_start', { data: { input } });
+
+  // Always use fast pipeline (Tela disabled for now)
+  console.log(`\n🚀 Starting report generation for ${input.companyName}...`);
+  return generateReportLegacy(input, startTime);
+}
+
+// ============================================================================
+// TELA AGENT REPORT GENERATOR
+// ============================================================================
+
+async function generateReportWithTelaAgent(
+  input: ReportGenerationInput,
+  startTime: number
+): Promise<GeneratedReportContent> {
+  try {
+    traceStep('tela_agent_start', { data: { companyName: input.companyName } });
+
+    // Call Tela Agent
+    const telaResponse = await generateReportWithTela({
+      companyName: input.companyName,
+      companyDomain: input.companyDomain,
+      industry: input.industry,
+      competitors: input.competitors,
+      dateRange: input.dateRange,
+    });
+
+    traceStep('tela_agent_response', {
+      data: {
+        title: telaResponse.title,
+        articleCount: telaResponse.articles?.length || 0,
+        researchNotes: telaResponse.research_notes,
+      }
+    });
+
+    // Convert to our format
+    const generationTime = Date.now() - startTime;
+    const converted = convertTelaResponse(telaResponse, generationTime);
+
+    // Map to ReportArticle format with IDs
+    const articles: ReportArticle[] = converted.articles.map((article, index) => ({
+      id: `article-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      title: article.title,
+      summary: article.summary,
+      content: article.content,
+      sources: article.sources,
+      imageAlt: article.imageAlt,
+      publishedAt: article.publishedAt,
+      relevanceScore: article.relevanceScore,
+    }));
+
+    // Generate images for articles
+    console.log('\n🎨 Generating images...');
+    await generateArticleImages(articles);
+
+    const reportContent: GeneratedReportContent = {
+      title: converted.title,
+      summary: converted.summary,
+      articles,
+      metadata: {
+        totalSearches: converted.metadata.totalSearches,
+        articlesFound: converted.metadata.articlesFound,
+        articlesSelected: articles.length,
+        generationTime,
+      },
+    };
+
+    // Update company knowledge if userId provided
+    if (input.userId) {
+      console.log('\n🧠 Updating company knowledge...');
+      try {
+        let companyKnowledge = await getCompanyKnowledge(input.userId);
+        if (!companyKnowledge) {
+          companyKnowledge = await initializeCompanyKnowledge(
+            input.userId,
+            input.companyName,
+            input.companyDomain,
+            input.industry,
+            input.competitors
+          );
+        }
+        const knowledgeUpdate = await extractKnowledgeFromReport(
+          input.companyName,
+          reportContent,
+          companyKnowledge
+        );
+        await updateCompanyKnowledge(input.userId, knowledgeUpdate);
+        console.log('✅ Company knowledge updated');
+      } catch (error) {
+        console.error('⚠️  Error updating company knowledge:', error);
+      }
+    }
+
+    // Finalize trace
+    if (currentTrace) {
+      currentTrace.endTime = Date.now();
+      traceStep('report_generation_complete', {
+        data: {
+          generationTime,
+          articleCount: articles.length,
+          totalSteps: currentTrace.steps.length,
+          method: 'tela_agent'
+        }
+      });
+    }
+
+    console.log(`\n✅ Report generated via Tela Agent in ${(generationTime / 1000).toFixed(1)}s`);
+    return reportContent;
+
+  } catch (error) {
+    console.error('❌ Tela Agent failed, falling back to legacy pipeline:', error);
+    traceStep('tela_agent_error', {
+      data: { error: error instanceof Error ? error.message : 'Unknown error' }
+    });
+
+    // Fallback to legacy pipeline
+    return generateReportLegacy(input, startTime);
+  }
+}
+
+// ============================================================================
+// LEGACY REPORT GENERATOR (Multi-step pipeline)
+// ============================================================================
+
+async function generateReportLegacy(
+  input: ReportGenerationInput,
+  startTime: number
+): Promise<GeneratedReportContent> {
+  console.log(`\n🚀 Starting legacy report generation for ${input.companyName}...`);
+  traceStep('legacy_pipeline_start', { data: { companyName: input.companyName } });
 
   try {
     // Step 0: Load company knowledge base (if userId provided)
@@ -1009,7 +1191,8 @@ export async function generateReport(
         data: {
           generationTime,
           articleCount: summarizedArticles.length,
-          totalSteps: currentTrace.steps.length
+          totalSteps: currentTrace.steps.length,
+          method: 'legacy_pipeline'
         }
       });
     }
@@ -1018,7 +1201,7 @@ export async function generateReport(
   } catch (error) {
     // Log error in trace
     if (currentTrace) {
-      traceStep('report_generation_error', {
+      traceStep('legacy_pipeline_error', {
         data: { error: error instanceof Error ? error.message : 'Unknown error' }
       });
       currentTrace.endTime = Date.now();

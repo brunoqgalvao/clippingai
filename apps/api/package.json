@@ -14,6 +14,7 @@
     "@anthropic-ai/sdk": "^0.20.0",
     "@clippingai/database": "workspace:*",
     "@clippingai/shared": "workspace:*",
+    "@google-cloud/storage": "^7.18.0",
     "@google/generative-ai": "^0.24.1",
     "@types/uuid": "^11.0.0",
     "bcrypt": "^6.0.0",
