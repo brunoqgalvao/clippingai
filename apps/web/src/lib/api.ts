@@ -82,6 +82,16 @@ export interface GenerateReportInput {
   isPublic?: boolean;
 }
 
+export type ArticleTag =
+  | 'company_news'
+  | 'competitor'
+  | 'market_trend'
+  | 'technology'
+  | 'regulation'
+  | 'funding'
+  | 'product_launch'
+  | 'opinion';
+
 export interface ReportArticle {
   id: string;
   title: string;
@@ -91,6 +101,7 @@ export interface ReportArticle {
   imageAlt?: string;
   sources: string[];
   publishedAt?: string;
+  tag?: ArticleTag;
 }
 
 export interface GeneratedReport {

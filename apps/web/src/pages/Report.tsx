@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, ExternalLink, Share2, Mail, Sparkles } from 'lucide-react';
+import { ArrowLeft, Calendar, ExternalLink, Share2, Sparkles, Mail } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { type StoredReport, getAuthToken } from '../lib/api';
+import { type StoredReport, type ArticleTag, getAuthToken } from '../lib/api';
 import { useReportCache } from '../contexts/ReportCacheContext';
 import ShareModal from '../components/ShareModal';
 import AgentDebugPanel from '../components/AgentDebugPanel';
 import '../styles/report.css';
+
+// Tag display configuration
+const TAG_CONFIG: Record<ArticleTag, { label: string; color: string }> = {
+  company_news: { label: 'Company News', color: '#3b82f6' },
+  competitor: { label: 'Competitor', color: '#ef4444' },
+  market_trend: { label: 'Market Trend', color: '#8b5cf6' },
+  technology: { label: 'Technology', color: '#06b6d4' },
+  regulation: { label: 'Regulation', color: '#f59e0b' },
+  funding: { label: 'Funding', color: '#22c55e' },
+  product_launch: { label: 'Product Launch', color: '#ec4899' },
+  opinion: { label: 'Opinion', color: '#6b7280' },
+};
 
 interface Article {
   id: string;
@@ -17,6 +29,7 @@ interface Article {
   imageAlt?: string;
   sources: string[];
   publishedAt?: string;
+  tag?: ArticleTag;
 }
 
 interface ReportData {
@@ -484,6 +497,18 @@ export default function Report({ }: ReportProps) {
 
               <div className="article-content">
                 <div className="article-meta">
+                  {article.tag && TAG_CONFIG[article.tag] && (
+                    <span
+                      className="article-tag"
+                      style={{
+                        backgroundColor: `${TAG_CONFIG[article.tag].color}20`,
+                        color: TAG_CONFIG[article.tag].color,
+                        border: `1px solid ${TAG_CONFIG[article.tag].color}40`,
+                      }}
+                    >
+                      {TAG_CONFIG[article.tag].label}
+                    </span>
+                  )}
                   <span className="article-date">{formatDate(article.publishedAt)}</span>
                   {article.sources.length > 0 && (
                     <>

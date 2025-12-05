@@ -46,9 +46,22 @@ export interface ReportGenerationInput {
   competitors?: string[];
   reportType: ReportType;
   dateRange?: number; // days to look back, default 7
+  lastReportAt?: string; // ISO timestamp of last report - only get news after this
   userFeedback?: Record<string, any>; // from previous reports
   userId?: string; // For loading company knowledge
+  minArticles?: number; // Minimum articles required (default 0 - can return empty if no news)
 }
+
+// Article category tags
+export type ArticleTag =
+  | 'company_news'      // Direct news about the target company
+  | 'competitor'        // Competitor moves and announcements
+  | 'market_trend'      // Industry/market trends and analysis
+  | 'technology'        // Tech/innovation developments
+  | 'regulation'        // Regulatory/policy changes
+  | 'funding'           // Investment, M&A, funding rounds
+  | 'product_launch'    // New products or features
+  | 'opinion';          // Analysis, opinion pieces
 
 export interface ReportArticle {
   id: string;
@@ -60,6 +73,7 @@ export interface ReportArticle {
   sources: string[];
   publishedAt?: string;
   relevanceScore?: number;
+  tag?: ArticleTag; // Category tag for the article
 }
 
 export interface GeneratedReportContent {
@@ -154,14 +168,31 @@ async function planSearchQueries(input: ReportGenerationInput): Promise<SearchQu
 }
 
 function buildQueryPlanningPrompt(input: ReportGenerationInput): string {
-  const { companyName, industry, competitors = [], dateRange = 7 } = input;
+  const { companyName, industry, competitors = [], dateRange = 7, lastReportAt } = input;
+
+  // Calculate time window description
+  let timeWindowText: string;
+  if (lastReportAt) {
+    const lastReport = new Date(lastReportAt);
+    const now = new Date();
+    const hoursSince = Math.round((now.getTime() - lastReport.getTime()) / (1000 * 60 * 60));
+    const daysSince = Math.round(hoursSince / 24);
+
+    if (hoursSince < 24) {
+      timeWindowText = `News from the last ${hoursSince} hours (since ${lastReport.toLocaleString()})`;
+    } else {
+      timeWindowText = `News from the last ${daysSince} days (since ${lastReport.toLocaleDateString()})`;
+    }
+  } else {
+    timeWindowText = `Last ${dateRange} days`;
+  }
 
   return `You are a research assistant planning search queries for a media monitoring report.
 
 Company: ${companyName}
 Industry: ${industry || 'Unknown'}
 Competitors: ${competitors.length > 0 ? competitors.join(', ') : 'To be discovered'}
-Time Range: Last ${dateRange} days
+Time Window: ${timeWindowText}
 
 Focus on:
 - News articles and press mentions about ${companyName}
@@ -174,7 +205,8 @@ Generate 5-7 optimal search queries to find the most relevant, recent informatio
 
 Each query should:
 - Be specific and targeted to media coverage and articles
-- Focus on recent developments (last ${dateRange} days)
+- Focus on RECENT developments within the time window
+- Include time modifiers like "today", "this week", "December 2024" when appropriate
 - Cover different aspects: company news, industry trends, competitor activities
 - Be likely to return high-quality news articles and publications
 
@@ -339,28 +371,75 @@ Preview: ${r.content.slice(0, 300)}...
     )
     .join('\n---\n');
 
-  return `You are filtering search results for a media monitoring digest about ${input.companyName} in the ${input.industry || 'their'} industry.
+  // Time window context
+  let timeContext = '';
+  if (input.lastReportAt) {
+    const lastReport = new Date(input.lastReportAt);
+    timeContext = `\n\n## TIME WINDOW: Only include news published AFTER ${lastReport.toLocaleString()}\nReject any articles that appear to be older than this timestamp.`;
+  }
 
-Review these ${results.length} search results and select the ${targetCount} MOST valuable articles.
+  const minArticles = input.minArticles ?? 0;
 
-**Selection Criteria:**
-- **Relevance**: Direct connection to ${input.companyName}, their industry (${input.industry}), or key competitors
-- **Quality**: Credible news sources with substantive content (avoid fluff, listicles, ads)
-- **Uniqueness**: Avoid duplicate coverage of the same story
-- **Actionability**: Contains concrete information, data, or developments
-- **Recency**: Prefer recent news
+  return `You are a senior intelligence analyst curating a briefing for ${input.companyName}'s leadership.
 
-**IMPORTANT:**
-- REJECT articles that are too generic or tangentially related
-- REJECT promotional content or press releases without substance
-- PREFER articles with specific facts, data, or developments
-- PREFER articles about companies/trends directly relevant to ${input.companyName}
+Select UP TO ${targetCount} articles that provide MAXIMUM COVERAGE with ZERO OVERLAP.
+${timeContext}
 
-Results:
+## IMPORTANT: QUALITY OVER QUANTITY
+
+- Select between ${minArticles} and ${targetCount} articles
+- If there are only 1-2 genuinely newsworthy items, that's fine - return only those
+- If NOTHING is truly newsworthy or actionable, return an EMPTY selection
+- DO NOT pad the report with low-value articles just to hit a number
+
+## THEME DIVERSITY RULE
+
+Each article MUST be assigned a DIFFERENT category:
+- **company_news**: Direct news about ${input.companyName}
+- **competitor**: News about ${input.competitors?.join(', ') || 'competitors'}
+- **market_trend**: Industry trends, market analysis
+- **technology**: Tech/AI/innovation developments
+- **regulation**: Policy, regulatory news
+- **funding**: Investment rounds, M&A
+- **product_launch**: New products or features
+
+## SELECTION PROCESS
+
+1. Categorize each article by primary theme
+2. REJECT articles that are:
+   - Old news (before the time window)
+   - Generic/low-value content
+   - Duplicates of the same story
+   - Not actionable for ${input.companyName}
+3. From remaining articles, pick the BEST one per category
+4. Only include articles that pass the "would a CEO care?" test
+
+## HARD RULES
+
+❌ NO two articles about the same announcement/story
+❌ NO two articles with the same category
+❌ NO filler content - better to return fewer high-quality articles
+❌ NO articles outside the time window${input.lastReportAt ? ` (after ${new Date(input.lastReportAt).toLocaleDateString()})` : ''}
+
+## Articles to Review (${results.length} total):
 ${resultsText}
 
-Return ONLY a JSON array of indices for the ${targetCount} best articles:
-{"selected": [0, 3, 5, 8, 12]}`;
+## Your Response
+
+Return JSON:
+{
+  "analysis": {
+    "total_reviewed": ${results.length},
+    "rejected_as_old": 0,
+    "rejected_as_duplicate": 0,
+    "rejected_as_low_value": 0,
+    "newsworthy_found": 0
+  },
+  "selected": [0, 3, 5],
+  "selected_categories": ["company_news", "competitor", "market_trend"]
+}
+
+IMPORTANT: selected_categories must have NO DUPLICATES. Each must be different.`;
 }
 
 function parseExtractionResponse(response: string): number[] {
@@ -369,7 +448,32 @@ function parseExtractionResponse(response: string): number[] {
     if (!jsonMatch) throw new Error('No JSON found');
 
     const parsed = JSON.parse(jsonMatch[0]);
-    return parsed.selected || [];
+
+    // Log the analysis stats
+    if (parsed.analysis) {
+      const a = parsed.analysis;
+      console.log(`📊 Analysis: ${a.total_reviewed || 'N/A'} reviewed → ${a.newsworthy_found || parsed.selected?.length || 0} newsworthy`);
+      if (a.rejected_as_old > 0) console.log(`   ⏰ ${a.rejected_as_old} rejected as old`);
+      if (a.rejected_as_duplicate > 0) console.log(`   🔄 ${a.rejected_as_duplicate} rejected as duplicate`);
+      if (a.rejected_as_low_value > 0) console.log(`   📉 ${a.rejected_as_low_value} rejected as low value`);
+    }
+
+    if (parsed.selected_categories && parsed.selected_categories.length > 0) {
+      console.log(`✅ Selected categories: ${parsed.selected_categories.join(', ')}`);
+
+      // Validate no duplicate categories
+      const uniqueCategories = new Set(parsed.selected_categories);
+      if (uniqueCategories.size < parsed.selected_categories.length) {
+        console.warn(`⚠️  WARNING: Duplicate categories detected! This shouldn't happen.`);
+      }
+    }
+
+    const selected = parsed.selected || [];
+    if (selected.length === 0) {
+      console.log(`📭 No articles selected - nothing newsworthy found`);
+    }
+
+    return selected;
   } catch (error) {
     console.error('Error parsing extraction response:', error);
     return [];
@@ -663,12 +767,23 @@ Write short, punchy sections:
 
 **Image Description**: Sophisticated editorial image concept based on the actual news.
 
+**Article Tag**: Categorize this article with ONE tag:
+- "company_news" - Direct news about ${input.companyName}
+- "competitor" - News about competitors (${input.competitors?.join(', ') || 'competitors'})
+- "market_trend" - Industry trends, market analysis
+- "technology" - Tech/innovation developments
+- "regulation" - Regulatory/policy changes
+- "funding" - Investment, M&A, funding rounds
+- "product_launch" - New products or features
+- "opinion" - Analysis, opinion pieces
+
 Return ONLY valid JSON:
 {
   "title": "factual headline based on sources",
   "summary": "2 sentence executive summary - grounded in sources",
   "content": "Full article with [1], [2] citations on every factual claim",
   "imageDescription": "image concept",
+  "tag": "one of: company_news, competitor, market_trend, technology, regulation, funding, product_launch, opinion",
   "sources": [${allSources.map(s => `"${s.url}"`).join(', ')}]
 }`;
 
@@ -704,6 +819,7 @@ Return ONLY valid JSON:
     imageAlt: parsed.imageDescription || parsed.title,
     sources: filteredSources.length > 0 ? filteredSources : [article.url],
     publishedAt: article.publishedDate,
+    tag: parsed.tag || 'market_trend', // Default to market_trend if not specified
   };
 }
 
@@ -954,24 +1070,58 @@ export async function generateReport(
     // Step 3: Extract best articles
     console.log('\n🎯 Step 3: Extracting and ranking articles...');
     const selectedArticles = await extractAndRankArticles(searchResults, input, 5);
+
+    // Handle case where no newsworthy articles were found
     if (selectedArticles.length === 0) {
-      throw new Error('No articles could be selected from search results');
+      console.log('\n📭 No newsworthy articles found in this time window');
+
+      const generationTime = Date.now() - startTime;
+
+      // Return empty report with appropriate message
+      const emptyReport: GeneratedReportContent = {
+        title: 'No New Updates',
+        summary: `No significant news or developments were found for ${input.companyName} in this time period. This could mean:\n\n• It was a quiet period with no major announcements\n• No newsworthy competitor activity\n• Industry conditions remained stable\n\nWe'll continue monitoring and notify you when something important happens.`,
+        articles: [],
+        metadata: {
+          totalSearches: queries.length,
+          articlesFound: searchResults.length,
+          articlesSelected: 0,
+          generationTime,
+        },
+      };
+
+      // Finalize trace
+      if (currentTrace) {
+        currentTrace.endTime = Date.now();
+        traceStep('report_generation_complete', {
+          data: {
+            generationTime,
+            articleCount: 0,
+            totalSteps: currentTrace.steps.length,
+            reason: 'no_newsworthy_articles'
+          }
+        });
+      }
+
+      return emptyReport;
     }
 
     // Step 4: Summarize articles (with company knowledge context)
-    console.log('\n📝 Step 4: Summarizing articles...');
+    console.log(`\n📝 Step 4: Summarizing ${selectedArticles.length} articles...`);
     const summarizedArticles = await summarizeArticles(selectedArticles, input, companyKnowledge);
 
     // Step 5: Synthesize Title + TL;DR
     console.log('\n✨ Step 5: Synthesizing report title and summary...');
     const synthesis = await synthesizeReport(summarizedArticles, input);
 
-    // Step 6: Generate images
-    console.log('\n🎨 Step 6: Generating images...');
-    await generateArticleImages(summarizedArticles);
+    // Step 6: Generate images (only if we have articles)
+    if (summarizedArticles.length > 0) {
+      console.log('\n🎨 Step 6: Generating images...');
+      await generateArticleImages(summarizedArticles);
+    }
 
     const generationTime = Date.now() - startTime;
-    console.log(`\n✅ Report generated successfully in ${(generationTime / 1000).toFixed(1)}s`);
+    console.log(`\n✅ Report generated successfully in ${(generationTime / 1000).toFixed(1)}s with ${summarizedArticles.length} articles`);
 
     const reportContent: GeneratedReportContent = {
       title: synthesis.title,
