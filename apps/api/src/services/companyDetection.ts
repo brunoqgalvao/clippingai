@@ -16,6 +16,7 @@ export interface CompanyInfo {
   description?: string;
   industry?: string;
   logo?: string;
+  logoVariant?: 'light' | 'dark' | 'unknown';
   logoOptions?: Array<{
     url: string;
     source: string;
@@ -88,41 +89,54 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Extract company name from various meta tags
-    const name =
-      $('meta[property="og:site_name"]').attr('content') ||
-      $('meta[name="application-name"]').attr('content') ||
-      $('title').text().split('-')[0].trim() ||
-      '';
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🏢 [CompanyDetection] Scraping: ${url}`);
+    console.log(`${'='.repeat(60)}`);
+    console.log(`📄 [CompanyDetection] HTML length: ${html.length} chars`);
 
-    // Extract description
+    // PRIMARY: Use Gemini to intelligently extract name and logo from HTML
+    const geminiExtraction = await extractWithGemini(html, url);
+
+    // FALLBACK for name: meta tags and title parsing
+    let name = geminiExtraction.name || '';
+    if (!name) {
+      const titleText = $('title').text();
+      const cleanedTitle = titleText.split(/[-|—–·]/)[0].trim();
+      name =
+        $('meta[property="og:site_name"]').attr('content') ||
+        $('meta[name="application-name"]').attr('content') ||
+        cleanedTitle ||
+        '';
+      console.log(`🔄 [CompanyDetection] Name fallback used: "${name}"`);
+    }
+
+    // Extract description from meta tags
     const description =
       $('meta[property="og:description"]').attr('content') ||
       $('meta[name="description"]').attr('content') ||
       '';
 
-    // Try to find logo with standard meta tags first
-    let logo =
-      $('meta[property="og:image"]').attr('content') ||
-      $('link[rel="apple-touch-icon"]').attr('href') ||
-      $('link[rel="icon"]').attr('href') ||
-      '';
+    // Use Gemini extraction for logo
+    let logo = geminiExtraction.logo || '';
+    let logoVariant = geminiExtraction.logoVariant;
 
-    // Make logo URL absolute
-    if (logo && !logo.startsWith('http')) {
-      const baseUrl = new URL(url);
-      logo = new URL(logo, baseUrl.origin).toString();
-    }
-
-    // If no logo found with meta tags, use Gemini Flash to intelligently extract it
-    if (!logo || logo.includes('favicon')) {
-      const intelligentLogo = await extractLogoWithGemini(html, url);
-      if (intelligentLogo) {
-        logo = intelligentLogo;
+    // Fallback: og:image (often a marketing banner, but better than nothing)
+    if (!logo) {
+      const ogImage = $('meta[property="og:image"]').attr('content');
+      if (ogImage) {
+        logo = ogImage.startsWith('http') ? ogImage : new URL(ogImage, new URL(url).origin).toString();
+        logoVariant = 'unknown'; // og:image variant is unknown
+        console.log(`⚠️ [CompanyDetection] Using og:image fallback: ${logo}`);
       }
     }
 
-    // Use Claude to analyze the page content and extract additional info
+    console.log(`\n📊 [CompanyDetection] FINAL RESULT:`);
+    console.log(`   Name: "${name}"`);
+    console.log(`   Logo: "${logo}" (${logoVariant})`);
+    console.log(`   Description: "${description?.slice(0, 80)}..."`);
+    console.log(`${'='.repeat(60)}\n`);
+
+    // Use Claude to analyze the page content and extract additional info (industry, competitors)
     const pageAnalysis = await analyzePageWithClaude($('body').text().slice(0, 5000), url);
 
     return {
@@ -131,6 +145,7 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
       industry: pageAnalysis.industry,
       competitors: pageAnalysis.competitors,
       logo: logo || undefined,
+      logoVariant: logo ? logoVariant : undefined,
     };
   } catch (error) {
     console.error('Error scraping website:', error);
@@ -138,58 +153,154 @@ async function scrapeCompanyWebsite(url: string): Promise<Partial<CompanyInfo> |
   }
 }
 
+interface GeminiExtraction {
+  name: string | null;
+  logo: string | null;
+  logoVariant: 'light' | 'dark' | 'unknown';
+}
+
 /**
- * Use Gemini Flash to intelligently extract logo URL from HTML
+ * Use Gemini Flash to intelligently extract company name AND logo from HTML
+ * This is the primary extraction method - LLM understands context better than regex
  */
-async function extractLogoWithGemini(html: string, url: string): Promise<string | null> {
+async function extractWithGemini(html: string, url: string): Promise<GeminiExtraction> {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     // Truncate HTML to avoid token limits (keep header and first part of body)
-    const truncatedHtml = html.slice(0, 15000);
+    const truncatedHtml = html.slice(0, 20000);
 
-    const prompt = `Analyze this HTML from ${url} and find the BEST logo image URL.
+    // Pre-extract potential logo URLs from HTML to help Gemini
+    const logoRegex = /["']([^"']*logo[^"']*\.(?:png|jpg|jpeg|svg|webp))["']/gi;
+    const logoMatches = [...html.matchAll(logoRegex)].map(m => m[1]);
+    const uniqueLogoUrls = [...new Set(logoMatches)].slice(0, 10);
 
-Look for:
-1. Images in the header/navbar with "logo" in class/id/alt
-2. SVG logos in the header
-3. Large prominent images near the company name
-4. Images with dimensions around 100-400px (typical logo size)
-5. Avoid favicons, social media icons, and tiny images
+    // Sort logos: dark/black/color first, then neutral, then white/light last
+    const sortedLogoUrls = uniqueLogoUrls.sort((a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const isDarkA = aLower.includes('dark') || aLower.includes('black') || aLower.includes('color');
+      const isDarkB = bLower.includes('dark') || bLower.includes('black') || bLower.includes('color');
+      const isLightA = aLower.includes('white') || aLower.includes('light');
+      const isLightB = bLower.includes('white') || bLower.includes('light');
+
+      if (isDarkA && !isDarkB) return -1;
+      if (isDarkB && !isDarkA) return 1;
+      if (isLightA && !isLightB) return 1;
+      if (isLightB && !isLightA) return -1;
+      return 0;
+    }).slice(0, 5);
+
+    console.log(`🔎 [Gemini] Pre-extracted logo candidates (sorted, dark first):`, sortedLogoUrls);
+
+    const logoHint = sortedLogoUrls.length > 0
+      ? `\n\n**I FOUND THESE URLs WITH "logo" IN THE FILENAME (sorted: dark logos first, white logos last):**\n${sortedLogoUrls.map(u => `- ${u}`).join('\n')}\n\nPick the FIRST suitable one (prefer dark/color logos for white background). Convert to absolute URL.`
+      : '';
+
+    const prompt = `Analyze this HTML from ${url} and extract the company name and logo.${logoHint}
+
+## COMPANY NAME
+Find the actual company/brand name. Rules:
+- Return ONLY the name (e.g., "Stripe", "Notion", "Figma")
+- Do NOT include taglines, slogans, or descriptions
+- Do NOT include separators like " - ", " | ", " — "
+- If the title is "Acme - Build faster", return "Acme"
+- If the title is "Welcome to Acme Inc.", return "Acme"
+- Look at: <title>, og:site_name, header text, logo alt text
+
+## LOGO - READ CAREFULLY
+
+I need you to find the company's logo. The logo will be displayed on a WHITE/LIGHT background, so prefer DARK logos.
+
+**STEP 1: GREP THE HTML FOR "logo"**
+Scan the entire HTML text for any string containing "logo" (case insensitive).
+Look for patterns like:
+- src="...logo..."
+- href="...logo..."
+- url(...logo...)
+- Any path/filename containing "logo"
+
+**STEP 2: CHOOSE THE RIGHT LOGO VARIANT**
+Many companies have multiple logo versions. PREFER in this order:
+1. logo-dark, logo-black, logo-color (BEST for white background)
+2. logo.png, logo.svg (neutral)
+3. logo-white, logo-light (AVOID - won't be visible on white background)
+
+**STEP 3: IF YOU FIND A URL WITH "logo" IN IT, RETURN THE DARK VERSION**
+Examples:
+- If you see both "/logo-white.png" and "/logo-dark.png" → return the DARK one
+- If you see both "/logo-light.svg" and "/logo.svg" → return logo.svg
+- /images/logo.svg → return ${url}/images/logo.svg
+
+**STEP 4: WHAT TO NEVER RETURN**
+NEVER return these:
+- og-image.png or og-image.jpg (social media preview, NOT a logo)
+- og:image meta content (this is a banner, NOT a logo)
+- opengraph images, twitter:image, hero images
+- homepage.png or similar marketing images
+- White/light logos if a dark version exists
+
+**IF NO LOGO FOUND:** Return null. Do NOT guess or return og:image as fallback.
 
 HTML:
 ${truncatedHtml}
 
-Return ONLY the best logo image URL (absolute URL starting with http/https), or "null" if no good logo found.
-If you find a relative URL, convert it to absolute using the base URL: ${url}
+Return ONLY valid JSON:
+{
+  "name": "Company Name" or null,
+  "logo": "https://example.com/path/to/logo.png" or null,
+  "logoVariant": "light" or "dark" or "unknown"
+}
 
-Response format: Just the URL or null, nothing else.`;
+**logoVariant rules:**
+- "light" = white/light colored logo (needs dark background to be visible)
+- "dark" = black/dark/colored logo (works on white background)
+- "unknown" = can't determine from filename`;
+
+    console.log(`\n🔍 [Gemini] Analyzing HTML from ${url} (${truncatedHtml.length} chars)`);
 
     const result = await model.generateContent(prompt);
     const response = result.response.text().trim();
 
-    // Clean up the response
-    let logoUrl = response.replace(/["'`]/g, '').trim();
+    console.log(`📝 [Gemini] Raw response:\n${response}\n`);
 
-    if (logoUrl === 'null' || logoUrl === 'NULL' || !logoUrl) {
-      return null;
+    // Parse JSON from response
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('❌ [Gemini] No JSON found in response');
+      return { name: null, logo: null, logoVariant: 'unknown' };
     }
 
-    // Make sure it's an absolute URL
-    if (!logoUrl.startsWith('http')) {
+    const parsed = JSON.parse(jsonMatch[0]);
+    console.log(`✅ [Gemini] Parsed: name="${parsed.name}", logo="${parsed.logo}", variant="${parsed.logoVariant}"`);
+
+    // Clean up logo URL
+    let logoUrl = parsed.logo;
+    if (logoUrl && !logoUrl.startsWith('http')) {
       const baseUrl = new URL(url);
       logoUrl = new URL(logoUrl, baseUrl.origin).toString();
+      console.log(`🔗 [Gemini] Converted relative URL to: ${logoUrl}`);
     }
 
-    // Validate it's actually an image URL
-    if (logoUrl.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i) || logoUrl.includes('logo')) {
-      return logoUrl;
+    // Determine logoVariant from filename if Gemini didn't specify
+    let logoVariant: 'light' | 'dark' | 'unknown' = parsed.logoVariant || 'unknown';
+    if (logoUrl && logoVariant === 'unknown') {
+      const lowerUrl = logoUrl.toLowerCase();
+      if (lowerUrl.includes('white') || lowerUrl.includes('light')) {
+        logoVariant = 'light';
+      } else if (lowerUrl.includes('dark') || lowerUrl.includes('black') || lowerUrl.includes('color')) {
+        logoVariant = 'dark';
+      }
     }
 
-    return null;
+    return {
+      name: parsed.name || null,
+      logo: logoUrl || null,
+      logoVariant,
+    };
   } catch (error) {
-    console.error('Error extracting logo with Gemini:', error);
-    return null;
+    console.error('❌ [Gemini] Error extracting:', error);
+    return { name: null, logo: null, logoVariant: 'unknown' };
   }
 }
 
@@ -298,22 +409,11 @@ Return format:
 
 /**
  * Search for company logo alternatives
+ * Note: Clearbit removed - often returns wrong logos for companies with common domain names
  */
 export async function searchCompanyLogos(companyName: string, domain: string): Promise<string[]> {
-  try {
-    // Try common logo sources
-    const logoSources = [
-      `https://logo.clearbit.com/${domain}`,
-      `https://img.logo.dev/${domain}?token=pk_X-HbP2vQT3uUGщdoZJQ`, // Brandfetch alternative
-      `https://api.brandfetch.io/v2/brands/${domain}`,
-    ];
-
-    // Return the sources as alternatives
-    return logoSources;
-  } catch (error) {
-    console.error('Error searching for logos:', error);
-    return [];
-  }
+  // This function is kept for API compatibility but we rely on Gemini extraction now
+  return [];
 }
 
 /**

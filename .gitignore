@@ -39,3 +39,6 @@ packages/database/prisma/migrations/
 # Temporary files
 *.tmp
 .cache/
+
+# Uploaded/generated images
+apps/api/public/uploads/

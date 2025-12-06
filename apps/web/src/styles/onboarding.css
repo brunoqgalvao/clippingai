@@ -278,7 +278,14 @@
 .logo-section {
   display: flex;
   justify-content: center;
+  align-items: center;
   margin-bottom: var(--space-8);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+}
+
+.logo-section.dark-bg {
+  background: var(--text-primary);
 }
 
 .logo-with-edit {
@@ -1226,6 +1233,18 @@
   background: var(--overlay-light);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-full);
+}
+
+.context-step .company-badge.dark-bg {
+  color: white;
+  background: var(--text-primary);
+}
+
+.context-step .company-badge .badge-logo {
+  height: 20px;
+  width: auto;
+  max-width: 80px;
+  object-fit: contain;
 }
 
 .context-form {

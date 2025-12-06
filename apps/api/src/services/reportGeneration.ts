@@ -87,6 +87,12 @@ export interface ReportArticle {
   tag?: ArticleTag; // Category tag for the article
 }
 
+export interface ProfilingStep {
+  name: string;
+  durationMs: number;
+  percentage: number;
+}
+
 export interface GeneratedReportContent {
   title: string; // Report headline
   summary: string; // TL;DR
@@ -96,6 +102,7 @@ export interface GeneratedReportContent {
     articlesFound: number;
     articlesSelected: number;
     generationTime: number;
+    profiling?: ProfilingStep[]; // Detailed timing breakdown
   };
 }
 
@@ -601,11 +608,11 @@ Return ONLY valid JSON:
         break;
       }
 
-      // Agent wants more data - execute searches
+      // Agent wants more data - execute searches IN PARALLEL
       if (decision.queries && decision.queries.length > 0) {
         const client = getTavilyClient();
 
-        for (const query of decision.queries) {
+        const searchPromises = decision.queries.map(async (query) => {
           try {
             traceStep(`deep_research_search`, { data: { query, iteration } });
 
@@ -622,26 +629,30 @@ Return ONLY valid JSON:
               score: r.score,
             }));
 
-            // Dedupe by URL
-            const newResults = results.filter(
-              (r: SearchResult) => !allAdditionalSources.some(existing => existing.url === r.url)
-            );
-
-            traceStep(`deep_research_search_results`, {
-              data: {
-                query,
-                resultsFound: results.length,
-                newResults: newResults.length,
-                results: newResults.map((r: SearchResult) => ({ title: r.title, url: r.url }))
-              }
-            });
-
-            allAdditionalSources.push(...newResults);
-            console.log(`    🔍 "${query}" → ${newResults.length} new sources`);
+            console.log(`    🔍 "${query.slice(0, 40)}..." → ${results.length} results`);
+            return results;
           } catch (error) {
             console.error(`    ❌ Error searching "${query}":`, error);
+            return [];
           }
-        }
+        });
+
+        const allResults = (await Promise.all(searchPromises)).flat();
+
+        // Dedupe by URL
+        const newResults = allResults.filter(
+          (r: SearchResult) => !allAdditionalSources.some(existing => existing.url === r.url)
+        );
+
+        traceStep(`deep_research_search_results`, {
+          data: {
+            queries: decision.queries,
+            resultsFound: allResults.length,
+            newResults: newResults.length,
+          }
+        });
+
+        allAdditionalSources.push(...newResults);
       }
 
       // High confidence threshold - stop early if agent is confident
@@ -676,19 +687,37 @@ Return ONLY valid JSON:
 async function summarizeArticles(
   articles: SearchResult[],
   input: ReportGenerationInput,
-  companyKnowledge?: CompanyKnowledge | null
+  companyKnowledge?: CompanyKnowledge | null,
+  startImageGeneration: boolean = false
 ): Promise<ReportArticle[]> {
   traceStep('summarization_start', { data: { articleCount: articles.length } });
 
+  // Track image generation promises for later (if enabled)
+  const imageGenerationPromises: Promise<void>[] = [];
+
   // PARALLELIZE: Deep research + summarize all articles concurrently
-  const summaryPromises = articles.map(async (article) => {
+  // When startImageGeneration=true, start generating images as soon as each article is summarized
+  const parallelStart = Date.now();
+  console.log(`  ⚡ Starting ${articles.length} articles in PARALLEL...`);
+
+  const summaryPromises = articles.map(async (article, idx) => {
+    const articleStart = Date.now();
     try {
       // Step 1: Ad-hoc deep research (agent decides when it has enough data)
       const additionalSources = await adHocDeepResearch(article, input);
+      const researchTime = ((Date.now() - articleStart) / 1000).toFixed(1);
 
       // Step 2: Summarize with enriched context and company knowledge
       const summary = await summarizeArticle(article, additionalSources, input, companyKnowledge);
-      console.log(`  📝 Summarized: "${summary.title}"`);
+      const summarizeTime = ((Date.now() - articleStart) / 1000).toFixed(1);
+      console.log(`  📝 [${idx + 1}] Done in ${summarizeTime}s (research: ${researchTime}s): "${summary.title.slice(0, 50)}..."`);
+
+      // Step 3: Start image generation immediately (don't wait for other summaries)
+      if (startImageGeneration && process.env.OPENAI_API_KEY) {
+        const imagePromise = generateSingleArticleImage(summary);
+        imageGenerationPromises.push(imagePromise);
+      }
+
       return summary;
     } catch (error) {
       console.error(`Error summarizing article "${article.title}":`, error);
@@ -697,6 +726,14 @@ async function summarizeArticles(
   });
 
   const summaries = (await Promise.all(summaryPromises)).filter((s): s is ReportArticle => s !== null);
+  const parallelTime = ((Date.now() - parallelStart) / 1000).toFixed(1);
+  console.log(`  ⚡ All ${summaries.length} articles processed in ${parallelTime}s (parallel)`);
+
+  // Wait for all image generation to complete (they started during summarization)
+  if (imageGenerationPromises.length > 0) {
+    await Promise.all(imageGenerationPromises);
+    console.log(`  🎨 All images generated during summarization`);
+  }
 
   traceStep('summarization_complete', {
     data: {
@@ -954,6 +991,39 @@ Return ONLY valid JSON with "title" and "summary" fields.`;
 // STEP 6: IMAGE GENERATION
 // ============================================================================
 
+// Single article image generator - used for early/parallel generation during summarization
+async function generateSingleArticleImage(article: ReportArticle): Promise<void> {
+  const imageStart = Date.now();
+  try {
+    const imageDescription = article.imageAlt || article.title;
+
+    // Shorter prompt for faster generation
+    const conceptualPrompt = `Abstract geometric editorial illustration: ${imageDescription.slice(0, 100)}
+
+Style: Minimalist, modern conceptual art. Clean geometric shapes, vibrant colors (teals, oranges, navy blues), gradient transitions. No text, no logos, purely abstract.`;
+
+    const response = await openai.images.generate({
+      model: 'gpt-image-1',
+      prompt: conceptualPrompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'low', // Changed from 'medium' to 'low' for speed
+    });
+
+    const imageTime = ((Date.now() - imageStart) / 1000).toFixed(1);
+    const imageData = response.data[0];
+    if (imageData?.b64_json) {
+      article.imageUrl = await saveBase64ImageLocally(imageData.b64_json, 'article');
+      console.log(`  🎨 Image (${imageTime}s): "${article.title.slice(0, 35)}..."`);
+    } else if (imageData?.url) {
+      article.imageUrl = await saveImageLocally(imageData.url, 'article');
+      console.log(`  🎨 Image (${imageTime}s): "${article.title.slice(0, 35)}..."`);
+    }
+  } catch (error) {
+    console.error(`  ❌ Error generating image for "${article.title}":`, error instanceof Error ? error.message : 'Unknown error');
+  }
+}
+
 async function generateArticleImages(articles: ReportArticle[]): Promise<void> {
   if (!process.env.OPENAI_API_KEY) {
     console.log('⚠️  Skipping image generation (no OpenAI API key)');
@@ -963,56 +1033,7 @@ async function generateArticleImages(articles: ReportArticle[]): Promise<void> {
   console.log('🎨 Generating images for articles...');
 
   // Generate images in parallel for better performance
-  const imagePromises = articles.map(async (article) => {
-    try {
-      // Extract core concept from image description
-      const imageDescription = article.imageAlt || article.title;
-
-      // Create ChatGPT Pulse-style conceptual image prompt
-      const conceptualPrompt = `Abstract editorial illustration representing: ${imageDescription}
-
-Style: Geometric, minimalist, conceptual art similar to ChatGPT Pulse or premium editorial publications.
-
-Visual Elements:
-- Clean geometric shapes (circles, rectangles, curves, grids)
-- Layered composition with depth
-- Vibrant color palette: deep teals, warm oranges, mustard yellows, navy blues, coral reds
-- Gradient transitions and color blocking
-- Subtle textures and patterns (stripes, dots, grids)
-- Atmospheric perspective with foreground/background elements
-
-Mood: Modern, sophisticated, tech-forward, optimistic
-No text, no logos, no literal representations - purely conceptual and abstract.
-Think: editorial magazine cover, tech conference poster, modern art museum.`;
-
-      // Generate image using gpt-image-1
-      // Note: gpt-image-1 only returns b64_json, not URLs
-      const response = await openai.images.generate({
-        model: 'gpt-image-1',
-        prompt: conceptualPrompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'medium', // 'low', 'medium', or 'high' - medium balances quality and speed
-      });
-
-      // gpt-image-1 returns b64_json, not url
-      const imageData = response.data[0];
-      if (imageData?.b64_json) {
-        // Save base64 image locally
-        article.imageUrl = await saveBase64ImageLocally(imageData.b64_json, 'article');
-        console.log(`  ✅ Generated and saved image for "${article.title}"`);
-      } else if (imageData?.url) {
-        // Fallback for other models that return URLs
-        article.imageUrl = await saveImageLocally(imageData.url, 'article');
-        console.log(`  ✅ Generated and saved image for "${article.title}"`);
-      } else {
-        console.log(`  ⚠️  No image data returned for "${article.title}"`);
-      }
-    } catch (error) {
-      console.error(`  ❌ Error generating image for "${article.title}":`, error instanceof Error ? error.message : 'Unknown error');
-      // Continue with other articles even if one fails
-    }
-  });
+  const imagePromises = articles.map(article => generateSingleArticleImage(article));
 
   await Promise.all(imagePromises);
 
@@ -1159,17 +1180,82 @@ async function generateReportWithTelaAgent(
 // LEGACY REPORT GENERATOR (Multi-step pipeline)
 // ============================================================================
 
+// Profiling helper
+interface ProfileStep {
+  name: string;
+  startTime: number;
+  endTime?: number;
+  duration?: number;
+}
+
+let profileSteps: ProfileStep[] = [];
+
+function profileStart(name: string): void {
+  profileSteps.push({ name, startTime: Date.now() });
+}
+
+function profileEnd(name: string): number {
+  const step = profileSteps.find(s => s.name === name && !s.endTime);
+  if (step) {
+    step.endTime = Date.now();
+    step.duration = step.endTime - step.startTime;
+    console.log(`⏱️  ${name}: ${(step.duration / 1000).toFixed(2)}s`);
+    return step.duration;
+  }
+  return 0;
+}
+
+function getProfilingData(): ProfilingStep[] {
+  const total = profileSteps.reduce((sum, s) => sum + (s.duration || 0), 0);
+
+  return [...profileSteps]
+    .filter(s => s.duration)
+    .sort((a, b) => (b.duration || 0) - (a.duration || 0))
+    .map(step => ({
+      name: step.name,
+      durationMs: step.duration || 0,
+      percentage: total > 0 ? Number(((step.duration || 0) / total * 100).toFixed(1)) : 0,
+    }));
+}
+
+function printProfileSummary(): ProfilingStep[] {
+  console.log('\n📊 ═══════════════════════════════════════════════════');
+  console.log('   PIPELINE PROFILING SUMMARY');
+  console.log('═══════════════════════════════════════════════════════');
+
+  const total = profileSteps.reduce((sum, s) => sum + (s.duration || 0), 0);
+
+  // Sort by duration descending
+  const sorted = [...profileSteps].filter(s => s.duration).sort((a, b) => (b.duration || 0) - (a.duration || 0));
+
+  for (const step of sorted) {
+    const pct = ((step.duration || 0) / total * 100).toFixed(1);
+    const bar = '█'.repeat(Math.round(Number(pct) / 5));
+    console.log(`   ${step.name.padEnd(25)} ${((step.duration || 0) / 1000).toFixed(2)}s (${pct}%) ${bar}`);
+  }
+
+  console.log('───────────────────────────────────────────────────────');
+  console.log(`   TOTAL: ${(total / 1000).toFixed(2)}s`);
+  console.log('═══════════════════════════════════════════════════════\n');
+
+  return getProfilingData();
+}
+
 async function generateReportLegacy(
   input: ReportGenerationInput,
   startTime: number
 ): Promise<GeneratedReportContent> {
-  console.log(`\n🚀 Starting legacy report generation for ${input.companyName}...`);
+  console.log(`\n🚀 Starting report generation for ${input.companyName}...`);
   traceStep('legacy_pipeline_start', { data: { companyName: input.companyName } });
+
+  // Reset profiling
+  profileSteps = [];
 
   try {
     // Step 0: Load company knowledge base (if userId provided)
     let companyKnowledge: CompanyKnowledge | null = null;
     if (input.userId) {
+      profileStart('0. Knowledge Base');
       console.log('\n🧠 Loading company knowledge base...');
       companyKnowledge = await getCompanyKnowledge(input.userId);
 
@@ -1186,16 +1272,20 @@ async function generateReportLegacy(
       } else {
         console.log(`✅ Loaded knowledge: ${companyKnowledge.competitors.length} competitors, ${companyKnowledge.keyProducts.length} products tracked`);
       }
+      profileEnd('0. Knowledge Base');
     }
 
     // Step 1: Plan queries
+    profileStart('1. Query Planning (Claude)');
     console.log('\n📋 Step 1: Planning search queries...');
     const queries = await planSearchQueries(input);
+    profileEnd('1. Query Planning (Claude)');
     if (queries.length === 0) {
       throw new Error('No queries generated');
     }
 
     // Step 2: Execute searches
+    profileStart('2. Web Search (Tavily)');
     console.log('\n🔍 Step 2: Executing searches...');
     let searchResults = await executeSearches(queries, input.dateRange || 7);
 
@@ -1210,18 +1300,22 @@ async function generateReportLegacy(
       console.log('\n⚠️  No results with 30 day filter. Trying broader search...');
       searchResults = await executeSearches(queries, 365); // Try past year
     }
+    profileEnd('2. Web Search (Tavily)');
 
     if (searchResults.length === 0) {
       throw new Error('No search results found even with extended date ranges. Please try a different company or check your search terms.');
     }
 
     // Step 3: Extract best articles
+    profileStart('3. Article Selection (Claude)');
     console.log('\n🎯 Step 3: Extracting and ranking articles...');
     const selectedArticles = await extractAndRankArticles(searchResults, input, 5);
+    profileEnd('3. Article Selection (Claude)');
 
     // Handle case where no newsworthy articles were found
     if (selectedArticles.length === 0) {
       console.log('\n📭 No newsworthy articles found in this time window');
+      const profiling = printProfileSummary();
 
       const generationTime = Date.now() - startTime;
 
@@ -1235,6 +1329,7 @@ async function generateReportLegacy(
           articlesFound: searchResults.length,
           articlesSelected: 0,
           generationTime,
+          profiling,
         },
       };
 
@@ -1254,21 +1349,24 @@ async function generateReportLegacy(
       return emptyReport;
     }
 
-    // Step 4: Summarize articles (with company knowledge context)
-    console.log(`\n📝 Step 4: Summarizing ${selectedArticles.length} articles...`);
-    const summarizedArticles = await summarizeArticles(selectedArticles, input, companyKnowledge);
+    // Step 4 + 6: Summarize articles AND start image generation as soon as each article is done
+    // This overlaps image generation with the remaining summarization work
+    profileStart('4+6. Summarize & Images (parallel)');
+    console.log(`\n📝 Step 4: Summarizing ${selectedArticles.length} articles (with concurrent image generation)...`);
+    const summarizedArticles = await summarizeArticles(selectedArticles, input, companyKnowledge, true);
+    profileEnd('4+6. Summarize & Images (parallel)');
 
-    // Step 5: Synthesize Title + TL;DR
+    // Step 5: Synthesize Title + TL;DR (runs after summarization since it needs all articles)
+    profileStart('5. Synthesis (Claude)');
     console.log('\n✨ Step 5: Synthesizing report title and summary...');
     const synthesis = await synthesizeReport(summarizedArticles, input);
-
-    // Step 6: Generate images (only if we have articles)
-    if (summarizedArticles.length > 0) {
-      console.log('\n🎨 Step 6: Generating images...');
-      await generateArticleImages(summarizedArticles);
-    }
+    profileEnd('5. Synthesis (Claude)');
 
     const generationTime = Date.now() - startTime;
+
+    // Print profiling summary and get data
+    const profiling = printProfileSummary();
+
     console.log(`\n✅ Report generated successfully in ${(generationTime / 1000).toFixed(1)}s with ${summarizedArticles.length} articles`);
 
     const reportContent: GeneratedReportContent = {
@@ -1280,11 +1378,13 @@ async function generateReportLegacy(
         articlesFound: searchResults.length,
         articlesSelected: summarizedArticles.length,
         generationTime,
+        profiling,
       },
     };
 
     // Step 7: Update company knowledge base (if userId provided)
     if (input.userId) {
+      profileStart('7. Knowledge Update');
       console.log('\n🧠 Extracting and updating company knowledge...');
       try {
         const knowledgeUpdate = await extractKnowledgeFromReport(
@@ -1298,6 +1398,7 @@ async function generateReportLegacy(
         console.error('⚠️  Error updating company knowledge:', error);
         // Don't fail the report generation if knowledge update fails
       }
+      profileEnd('7. Knowledge Update');
     }
 
     // Finalize trace

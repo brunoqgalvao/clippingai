@@ -115,6 +115,48 @@ router.post('/manual-company', async (req, res) => {
 });
 
 /**
+ * GET /api/onboarding/test-detection
+ * Test company detection for a given URL (for debugging)
+ * Usage: /api/onboarding/test-detection?url=https://tela.com
+ */
+router.get('/test-detection', async (req, res) => {
+  try {
+    const url = req.query.url as string;
+
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing url query parameter. Usage: ?url=https://example.com',
+      });
+    }
+
+    // Extract domain from URL to create a fake email
+    const domain = new URL(url).hostname.replace('www.', '');
+    const fakeEmail = `test@${domain}`;
+
+    console.log(`\n🧪 [TEST] Testing company detection for: ${url}`);
+    console.log(`🧪 [TEST] Using fake email: ${fakeEmail}\n`);
+
+    const startTime = Date.now();
+    const companyInfo = await detectCompanyFromEmail(fakeEmail);
+    const duration = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      testUrl: url,
+      duration: `${duration}ms`,
+      data: companyInfo,
+    });
+  } catch (error) {
+    console.error('Error in test detection:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
  * POST /api/onboarding/search-logos
  * Search for alternative company logos
  */

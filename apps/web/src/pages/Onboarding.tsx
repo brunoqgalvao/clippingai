@@ -466,7 +466,7 @@ export default function Onboarding() {
 
               <div className="company-verification-card">
                 {/* Company Logo Section */}
-                <div className="logo-section">
+                <div className={`logo-section ${companyInfo.logoVariant === 'light' ? 'dark-bg' : ''}`}>
                   <div className="logo-with-edit">
                     {selectedLogo ? (
                       <img src={selectedLogo} alt={companyInfo.name} className="company-logo" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -703,8 +703,12 @@ export default function Onboarding() {
           <div className="onboarding-step context-step">
             <div className="step-content">
               <div className="company-context">
-                <span className="company-badge">
-                  <Check size={16} />
+                <span className={`company-badge ${companyInfo.logoVariant === 'light' ? 'dark-bg' : ''}`}>
+                  {selectedLogo ? (
+                    <img src={selectedLogo} alt={companyInfo.name} className="badge-logo" />
+                  ) : (
+                    <Check size={16} />
+                  )}
                   {getCleanCompanyName(companyInfo.name)}
                 </span>
               </div>

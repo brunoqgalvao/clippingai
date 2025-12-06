@@ -19,6 +19,7 @@ export interface CompanyDetectionResult {
   description?: string;
   industry?: string;
   logo?: string;
+  logoVariant?: 'light' | 'dark' | 'unknown';
   logoOptions?: Array<{
     url: string;
     source: string;
